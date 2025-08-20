@@ -1,18 +1,18 @@
 <package>
-  <name>saw_optoforce_sensor_examples</name>
+  <name>saw_psmove_examples</name>
   <version>1.1.0</version>
   <description>
-  sawOptoforceSensor Examples
+  sawPSMove Examples
   </description>
   <maintainer email="anton.deguet@jhu.edu">Anton Deguet</maintainer>
   <license>cisst</license>
-  <url>https://github.com/jhu-saw/sawOptoforceSensor</url>
+  <url>https://github.com/jhu-saw/sawPSMove</url>
 
   <build_depend>cisst</build_depend>
-  <build_depend>saw_optoforce_sensor</build_depend>
+  <build_depend>saw_psmove</build_depend>
 
   <run_depend>cisst</run_depend>
-  <run_depend>saw_optoforce_sensor</run_depend>
+  <run_depend>saw_psmove</run_depend>
 
   <export>
     <build_type>catkin</build_type>

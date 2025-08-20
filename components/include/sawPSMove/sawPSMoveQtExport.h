@@ -2,7 +2,10 @@
 /* ex: set filetype=cpp softtabstop=4 shiftwidth=4 tabstop=4 cindent expandtab: */
 
 /*
-  (C) Copyright 2016 Johns Hopkins University (JHU), All Rights Reserved.
+  Author(s):  Anton Deguet
+  Created on: 2014-10-07
+
+  (C) Copyright 2014-2018 Johns Hopkins University (JHU), All Rights Reserved.
 
 --- begin cisst license - do not edit ---
 
@@ -14,7 +17,7 @@ http://www.cisst.org/cisst/license.txt.
 */
 
 // check if this module is build as a DLL
-#ifdef sawOptoforceSensor_EXPORTS
+#ifdef sawPSMoveQt_EXPORTS
 #define CISST_THIS_LIBRARY_AS_DLL
 #endif
 
@@ -23,4 +26,3 @@ http://www.cisst.org/cisst/license.txt.
 
 // avoid impact on other modules
 #undef CISST_THIS_LIBRARY_AS_DLL
-

@@ -10,47 +10,36 @@
 #
 # --- end cisst license ---
 
-set (REQUIRED_CISST_LIBRARIES
-     cisstCommon
-     cisstVector
-     cisstVectorQt
-     cisstNumerical
-     cisstOSAbstraction
-     cisstMultiTask
-     cisstMultiTaskQt
-     cisstParameterTypes
-     cisstParameterTypesQt
-     cisstQt)
 
-# cisst
-find_package (cisst REQUIRED ${REQUIRED_CISST_LIBRARIES})
+set(REQUIRED_CISST_LIBRARIES
+    cisstCommon
+    cisstVector
+    cisstCommonQt
+    cisstVectorQt
+    cisstOSAbstraction
+    cisstMultiTask
+    cisstMultiTaskQt
+    cisstParameterTypes
+    cisstQt
+)
 
+find_package(cisst REQUIRED ${REQUIRED_CISST_LIBRARIES})
 if (cisst_FOUND_AS_REQUIRED)
+  include(${CISST_USE_FILE})
 
-  # cisst
-  include (${CISST_USE_FILE})
+  include_directories(${CMAKE_CURRENT_BINARY_DIR})
+  set(CMAKE_AUTOMOC ON)
 
-  # for Qt generated header files
-  include_directories (${CMAKE_CURRENT_BINARY_DIR})
-  if (CISST_HAS_QT4)
-    qt4_wrap_cpp (SAW_ATINETFT_QT_WRAP_CPP
-                  ${sawOptoforceSensor_HEADER_DIR}/mtsForceTorqueQtWidget.h
-                  )
-  else (CISST_HAS_QT4)
-    set (CMAKE_AUTOMOC ON)
-  endif (CISST_HAS_QT4)
+  add_library(sawPSMoveQt
+      ${sawPSMove_HEADER_DIR}/sawPSMoveQtExport.h
+      ${sawPSMove_HEADER_DIR}/mtsPSMoveQtWidget.h
+      mtsPSMoveQtWidget.cpp)
 
-  add_library (sawOptoforceSensorQt
-               ${sawOptoforceSensor_HEADER_DIR}/sawOptoforceSensorQtExport.h
-               ${sawOptoforceSensor_HEADER_DIR}/mtsForceTorqueQtWidget.h
-               mtsForceTorqueQtWidget.cpp
-               ${SAW_ATINETFT_QT_WRAP_CPP})
-  set_property (TARGET sawOptoforceSensorQt PROPERTY FOLDER "sawOptoforceSensor") 
-  cisst_target_link_libraries (sawOptoforceSensorQt ${REQUIRED_CISST_LIBRARIES})
+  set_property(TARGET sawPSMoveQt PROPERTY FOLDER "sawPSMove")
+  cisst_target_link_libraries(sawPSMoveQt ${REQUIRED_CISST_LIBRARIES})
 
-  # make sure the new library is known by the parent folder to add to the config file
-  set (sawOptoforceSensorQt_LIBRARIES sawOptoforceSensorQt PARENT_SCOPE)
-
-else (cisst_FOUND_AS_REQUIRED)
-  message ("Information: code will not be compiled, it requires ${REQUIRED_CISST_LIBRARIES}")
-endif (cisst_FOUND_AS_REQUIRED)
+  # Export Qt lib to parent so examples/ROS can link it if desired
+  set(sawPSMoveQt_LIBRARIES sawPSMoveQt PARENT_SCOPE)
+else()
+  message("Information: Qt widget requires cisst Qt components.")
+endif()

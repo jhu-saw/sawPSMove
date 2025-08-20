@@ -9,94 +9,71 @@
 #
 # --- end cisst license ---
 
-project (sawOptoforceSensor)
+project(sawPSMove)
 
-cmake_minimum_required (VERSION 2.8)
+# cisst
+set(REQUIRED_CISST_LIBRARIES
+    cisstCommon
+    cisstVector
+    cisstNumerical
+    cisstOSAbstraction
+    cisstMultiTask
+    cisstParameterTypes
+)
+find_package(cisst 1.0.11 COMPONENTS ${REQUIRED_CISST_LIBRARIES} REQUIRED)
+include(${CISST_USE_FILE})
 
-# Core libraries
-set (REQUIRED_CISST_LIBRARIES cisstCommon
-                              cisstVector
-                              cisstNumerical
-                              cisstOSAbstraction
-                              cisstMultiTask
-                              cisstParameterTypes)
+# PSMove API (headers & libs should be visible via CMAKE_PREFIX_PATH or pkg-config)
+find_path(PSMOVE_INCLUDE_DIR psmove.h)
+find_library(PSMOVE_LIB psmoveapi)
+# Optional tracker + OpenCV (for camera pose proxy)
+find_library(PSMOVE_TRACKER_LIB psmoveapi_tracker)
+find_package(OpenCV QUIET COMPONENTS core imgproc highgui)
 
-find_package (cisst 1.0.11 COMPONENTS ${REQUIRED_CISST_LIBRARIES})
+if (PSMOVE_TRACKER_LIB AND OpenCV_FOUND)
+  add_compile_definitions(SAW_PSMOVE_HAVE_TRACKER)
+endif()
 
-if (cisst_FOUND_AS_REQUIRED)
+# Headers & sources
+set(sawPSMove_HEADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/sawPSMove")
+include_directories(
+  ${sawPSMove_HEADER_DIR}
+  ${PSMOVE_INCLUDE_DIR}
+)
 
-  # load cisst configuration
-  include (${CISST_USE_FILE})
+add_library(sawPSMove
+  code/mtsPSMove.cpp
+  ${sawPSMove_HEADER_DIR}/sawPSMoveExport.h
+  ${sawPSMove_HEADER_DIR}/mtsPSMove.h
+)
 
-  # catkin/ROS paths
-  cisst_is_catkin_build (sawOptoforceSensor_IS_CATKIN_BUILT)
-  if (sawOptoforceSensor_IS_CATKIN_BUILT)
-    set (sawOptoforceSensor_CONFIG_FILE_DIR "${CATKIN_DEVEL_PREFIX}/share/sawOptoforceSensor/cmake")
-    set (LIBRARY_OUTPUT_PATH "${sawOptoforceSensor_BINARY_DIR}/lib")
-  else ()
-    set (sawOptoforceSensor_CONFIG_FILE_DIR "${sawOptoforceSensor_BINARY_DIR}")
-  endif ()
+# Public include dir so downstream targets can include <sawPSMove/...>
+target_include_directories(sawPSMove PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
-  # create/configure file for find_package (sawOptoforceSensor)
-  set (sawOptoforceSensor_INCLUDE_DIR
-       "${sawOptoforceSensor_SOURCE_DIR}/include"
-       "${sawOptoforceSensor_BINARY_DIR}/include")
-  set (sawOptoforceSensor_LIBRARY_DIR "${LIBRARY_OUTPUT_PATH}")
-  set (sawOptoforceSensor_LIBRARIES sawOptoforceSensor)
+# Link cisst
+cisst_target_link_libraries(sawPSMove ${REQUIRED_CISST_LIBRARIES})
 
-  # Set the version number
-  set (sawOptoforceSensor_VERSION_MAJOR "1")
-  set (sawOptoforceSensor_VERSION_MINOR "1")
-  set (sawOptoforceSensor_VERSION_PATCH "0")
-  set (sawOptoforceSensor_VERSION "${sawOptoforceSensor_VERSION_MAJOR}.${sawOptoforceSensor_VERSION_MINOR}.${sawOptoforceSensor_VERSION_PATCH}")
+# Link PSMove core
+target_link_libraries(sawPSMove ${PSMOVE_LIB})
 
-  # Generate sawOptoforceSensorRevision.h
-  configure_file ("${sawOptoforceSensor_SOURCE_DIR}/code/sawOptoforceSensorRevision.h.in"
-                  "${sawOptoforceSensor_BINARY_DIR}/include/sawOptoforceSensor/sawOptoforceSensorRevision.h")
+# Link tracker + OpenCV if present
+if (PSMOVE_TRACKER_LIB AND OpenCV_FOUND)
+  target_link_libraries(sawPSMove ${PSMOVE_TRACKER_LIB} ${OpenCV_LIBS})
+endif()
 
-  include_directories (${sawOptoforceSensor_INCLUDE_DIR})
-  set (sawOptoforceSensor_HEADER_DIR "${sawOptoforceSensor_SOURCE_DIR}/include/sawOptoforceSensor")
-  add_library (sawOptoforceSensor
-               code/mtsOptoforce3D.cpp
-               ${sawOptoforceSensor_HEADER_DIR}/sawOptoforceSensorExport.h
-               ${sawOptoforceSensor_HEADER_DIR}/mtsOptoforce3D.h
-               ${sawOptoforceSensor_BINARY_DIR}/include/sawOptoforceSensor/sawOptoforceSensorRevision.h)
+set_target_properties(sawPSMove PROPERTIES FOLDER "sawPSMove")
 
-  set_property (TARGET sawOptoforceSensor PROPERTY FOLDER "sawOptoforceSensor")
-  cisst_target_link_libraries (sawOptoforceSensor ${REQUIRED_CISST_LIBRARIES})
+# Qt widget subdir
+if (CISST_HAS_QT)
+  add_subdirectory(code/Qt)
+endif()
 
-  # add Qt code
-  if (CISST_HAS_QT)
-    add_subdirectory (code/Qt)
-    set (sawOptoforceSensor_LIBRARIES ${sawOptoforceSensor_LIBRARIES} ${sawOptoforceSensorQt_LIBRARIES})
-  endif (CISST_HAS_QT)
-
-  set (sawOptoforceSensor_CMAKE_CONFIG_FILE
-       "${sawOptoforceSensor_CONFIG_FILE_DIR}/sawOptoforceSensorConfig.cmake")
-
-  configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/cmake/sawOptoforceSensorConfig.cmake.in"
-                  "${sawOptoforceSensor_CMAKE_CONFIG_FILE}"
-                  @ONLY)
-
-  cisst_add_config_version ("${sawOptoforceSensor_CONFIG_FILE_DIR}/sawOptoforceSensorConfigVersion.cmake"
-                            VERSION ${sawOptoforceSensor_VERSION}
-                            DESTINATION "share/sawOptoforceSensor"
-                            COMPONENT sawOptoforceSensor)
-
-  # Install target for headers and library
-  install (DIRECTORY "${sawOptoforceSensor_SOURCE_DIR}/include/sawOptoforceSensor"
-                     "${sawOptoforceSensor_BINARY_DIR}/include/sawOptoforceSensor"
-           DESTINATION include
-           PATTERN .svn EXCLUDE)
-
-  install (TARGETS sawOptoforceSensor
-           RUNTIME DESTINATION bin
-           LIBRARY DESTINATION lib
-           ARCHIVE DESTINATION lib)
-
-  install (FILES "${sawOptoforceSensor_CMAKE_CONFIG_FILE}"
-           DESTINATION "share/sawOptoforceSensor")
-
-else (cisst_FOUND_AS_REQUIRED)
-  message ("Information: code in ${CMAKE_CURRENT_SOURCE_DIR} will not be compiled, it requires ${REQUIRED_CISST_LIBRARIES}")
-endif (cisst_FOUND_AS_REQUIRED)
+# Install
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/sawPSMove"
+        DESTINATION include)
+install(TARGETS sawPSMove
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib)

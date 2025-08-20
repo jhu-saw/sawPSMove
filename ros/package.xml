@@ -1,29 +1,20 @@
 <?xml version="1.0"?>
-<package>
-  <name>optoforce_ros</name>
+<package format="3">
+  <name>psmove_ros</name>
   <version>1.1.0</version>
-  <description>The Optoforce ROS package</description>
-
-  <maintainer email="anton.deguet@jhu.edu">Anton Deguet</maintainer>
+  <description>ROS 2 wrapper for sawPSMove</description>
+  <maintainer email="akumar81@jhu.edu">Aravind S Kumar</maintainer>
   <license>cisst</license>
 
-  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <build_depend>saw_optoforce_sensor</build_depend>
-  <build_depend>cisst_ros_bridge</build_depend>
-  <build_depend>geometry_msgs</build_depend>
-  <build_depend>roscpp</build_depend>
-  <build_depend>std_msgs</build_depend>
-  <build_depend>roslib</build_depend>
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>cisst_ros2_bridge</depend>
 
-  <run_depend>saw_optoforce_sensor</run_depend>
-  <run_depend>cisst_ros_bridge</run_depend>
-  <run_depend>geometry_msgs</run_depend>
-  <run_depend>roscpp</run_depend>
-  <run_depend>std_msgs</run_depend>
-  <run_depend>roslib</run_depend>
-
-  <!-- The export tag contains other, unspecified, tags -->
   <export>
+    <build_type>ament_cmake</build_type>
   </export>
 </package>
