@@ -1,61 +1,64 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-    */
-/* ex: set filetype=cpp softtabstop=4 shiftwidth=4 tabstop=4 cindent expandtab: */
-
-/*
-  (C) Copyright 2016 Johns Hopkins University (JHU), All Rights Reserved.
-
---- begin cisst license - do not edit ---
-
-This software is provided "as is" under an open source license, with
-no warranty.  The complete license can be found in license.txt and
-http://www.cisst.org/cisst/license.txt.
-
---- end cisst license ---
-*/
-
+// sawPSMove/components/include/sawPSMove/mtsPSMove.h
 #pragma once
 
 #include <cisstMultiTask/mtsTaskContinuous.h>
-#include <cisstMultiTask/mtsInterfaceProvided.h>
 #include <cisstParameterTypes/prmPositionCartesianGet.h>
-#include <cisstVector/vctQuaternionRotation3.h>
+#include <cisstVector/vctFixedSizeVectorTypes.h>
+#include <cisstVector/vctMatrixRotation3.h>
 #include <cisstVector/vctFrame4x4.h>
-#include <cisstVector/vctTransformationTypes.h>
-#include <cisstCommon/cmnUnits.h>
 
 #include <sawPSMove/sawPSMoveExport.h>
 
-extern "C" {
-#include <psmove.h>
-#ifdef SAW_PSMOVE_HAVE_TRACKER
-#include <psmove_tracker.h>
-#endif
-}
+// Forward declare to avoid leaking the C header in users’ includes
+struct _PSMove;
+typedef struct _PSMove PSMove;
 
-class CISST_EXPORT mtsPSMove : public mtsTaskContinuous
+class SAW_PSMOVE_EXPORT mtsPSMove : public mtsTaskContinuous
 {
     CMN_DECLARE_SERVICES(CMN_NO_DYNAMIC_CREATION, CMN_LOG_ALLOW_DEFAULT);
 
 public:
-    mtsPSMove(const std::string & name, double periodInSeconds = 0.01);
+    // Default: discover controller 0
+    explicit mtsPSMove(const std::string & componentName);
+    // Select controller by numeric/string hint (e.g. "id:1" or "1")
+    mtsPSMove(const std::string & componentName, const std::string & connectionHint);
+
     ~mtsPSMove() override;
 
-    void Configure(const std::string & configFile = "") override;
+    // cisst Task interface
+    void Configure(const std::string &args) override;
     void Startup(void) override;
     void Run(void) override;
     void Cleanup(void) override;
 
-private:
-    // State: measured pose (CRTK "measured_cp")
-    prmPositionCartesianGet M_measured_cp;
+    // Utility commands
+    void SetLED(const vctDouble3 &rgb);    // 0..1
+    void SetRumble(const double & strength); // 0..1
+    void ResetOrientation(void);
 
-    // PSMove handles
-    PSMove * Move{nullptr};
-#ifdef SAW_PSMOVE_HAVE_TRACKER
-    PSMoveTracker * Tracker{nullptr};
-#endif
+protected:
+    // PSMove handle
+    PSMove *Move{nullptr};
+    int ControllerIndex{0};
+    bool OrientationAvailable{false};
 
-    void UpdatePoseFromPSMove();
+    // State
+    prmPositionCartesianGet m_measured_cp;    // Pose
+    vctDouble3 m_accel;                       // accel raw
+    vctDouble3 m_gyro;                        // gyro raw
+    unsigned int m_buttons{0};                // button mask
+    double m_trigger{0.0};                    // 0..1
+    double m_battery{0.0};                    // 0..1 (approx)
+
+    // State table
+    mtsStateTable *Table{nullptr};
+
+    // Provided interface
+    mtsInterfaceProvided *Interface{nullptr};
+
+    // Internals
+    void UpdateFromController();
+    void QuaternionToRotation(double w, double x, double y, double z, vctMatRot3 &R) const;
+    static double Clamp01(double v) { return (v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v)); }
 };
-CMN_DECLARE_SERVICES_INSTANTIATION(mtsPSMove);
-
+CMN_DECLARE_SERVICES_INSTANTIATION(mtsPSMove)

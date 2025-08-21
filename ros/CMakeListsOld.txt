@@ -1,0 +1,44 @@
+cmake_minimum_required(VERSION 3.10)
+project(psmove_ros)
+
+# ament + cisst
+find_package(ament_cmake REQUIRED)
+find_package(cisst REQUIRED)
+include(${CISST_USE_FILE})
+
+# Our package (now resolvable because top-level set sawPSMove_DIR to components build dir)
+find_package(sawPSMove REQUIRED)
+include_directories(
+  ${sawPSMove_INCLUDE_DIR}
+  ${PSMOVE_INCLUDE_DIR}
+  "$ENV{PSMOVE_BUILD}"
+)
+
+link_directories(${sawPSMove_LIBRARY_DIR})
+
+# PS Move env vars respected (for direct C++ node usage if needed)
+if(NOT DEFINED ENV{PSMOVE_ROOT})
+  message(FATAL_ERROR "Please set PSMOVE_ROOT")
+endif()
+if(NOT DEFINED ENV{PSMOVE_BUILD})
+  message(FATAL_ERROR "Please set PSMOVE_BUILD")
+endif()
+set(PSMOVE_INCLUDE_DIR "$ENV{PSMOVE_ROOT}/include")
+set(PSMOVE_LIBRARY_DIR "$ENV{PSMOVE_BUILD}")
+find_library(PSMOVE_LIB NAMES psmoveapi psmove HINTS ${PSMOVE_LIBRARY_DIR})
+
+include_directories(${PSMOVE_INCLUDE_DIR})
+link_directories(${PSMOVE_LIBRARY_DIR})
+
+add_executable(psmove_node src/psmove.cpp)
+target_link_libraries(psmove_node
+  ${sawPSMove_LIBRARIES}
+  ${PSMOVE_LIB}
+  ${cisstMultiTask_LIBRARIES})
+
+ament_target_dependencies(psmove_node)
+
+install(TARGETS psmove_node
+  DESTINATION lib/${PROJECT_NAME})
+
+ament_package()

@@ -1,18 +1,9 @@
-<package>
-  <name>saw_psmove</name>
-  <version>1.1.0</version>
-  <description>
-  sawPSMove: cisst/SAW device for the PlayStation Move controller
-  </description>
-  <maintainer email="akumar81@jhu.edu">Aravind S Kumar</maintainer>
-  <license>cisst</license>
-  <url>https://github.com/jhu-saw/sawPSMove</url>
-
-  <build_depend>cisst</build_depend>
-  <run_depend>cisst</run_depend>
-
-  <export>
-    <build_type>catkin</build_type>
-  </export>
-
+<?xml version="1.0"?>
+<package format="2">
+  <name>sawPSMove</name>
+  <version>0.1.0</version>
+  <description>cisst/SAW component for PlayStation Move controller</description>
+  <maintainer email="you@example.com">You</maintainer>
+  <license>BSD-3-Clause</license>
+  <author email="you@example.com">You</author>
 </package>

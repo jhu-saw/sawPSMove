@@ -1,20 +1,36 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>psmove_ros</name>
-  <version>1.1.0</version>
-  <description>ROS 2 wrapper for sawPSMove</description>
-  <maintainer email="akumar81@jhu.edu">Aravind S Kumar</maintainer>
+  <version>1.0.0</version>
+  <description>ROS wrapper for sawPSMove (dual ROS1/ROS2, CRTK bridge + optional Qt UI)</description>
+  <maintainer email="anton@example.org">Anton Deguet</maintainer>
   <license>cisst</license>
+  <url>https://github.com/jhu-saw/sawPSMove</url>
 
-  <buildtool_depend>ament_cmake</buildtool_depend>
+  <!-- ROS1 -->
+  <buildtool_depend condition="$ROS_VERSION == 1">catkin</buildtool_depend>
+  <build_depend  condition="$ROS_VERSION == 1">cisst_ros_crtk</build_depend>
+  <build_depend  condition="$ROS_VERSION == 1">roscpp</build_depend>
+  <build_depend  condition="$ROS_VERSION == 1">roslib</build_depend>
+  <exec_depend   condition="$ROS_VERSION == 1">cisst_ros_crtk</exec_depend>
+  <exec_depend   condition="$ROS_VERSION == 1">roscpp</exec_depend>
+  <exec_depend   condition="$ROS_VERSION == 1">roslib</exec_depend>
 
-  <depend>rclcpp</depend>
-  <depend>geometry_msgs</depend>
-  <depend>sensor_msgs</depend>
-  <depend>std_msgs</depend>
-  <depend>cisst_ros2_bridge</depend>
+  <!-- ROS2 -->
+  <buildtool_depend condition="$ROS_VERSION == 2">ament_cmake</buildtool_depend>
+  <depend condition="$ROS_VERSION == 2">rclcpp</depend>
+  <depend condition="$ROS_VERSION == 2">std_msgs</depend>
+  <depend condition="$ROS_VERSION == 2">geometry_msgs</depend>
+  <depend condition="$ROS_VERSION == 2">sensor_msgs</depend>
+  <depend condition="$ROS_VERSION == 2">diagnostic_msgs</depend>
+  <depend condition="$ROS_VERSION == 2">tf2_ros</depend>
+  <depend condition="$ROS_VERSION == 2">tf2_msgs</depend>
+  <depend condition="$ROS_VERSION == 2">cisst_msgs</depend>
+  <depend condition="$ROS_VERSION == 2">crtk_msgs</depend>
+  <depend condition="$ROS_VERSION == 2">cisst_ros_bridge</depend>
+  <depend condition="$ROS_VERSION == 2">cisst_ros_crtk</depend>
 
   <export>
-    <build_type>ament_cmake</build_type>
+    <build_type condition="$ROS_VERSION == 2">ament_cmake</build_type>
   </export>
 </package>

@@ -1,71 +1,132 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-    */
-/* ex: set filetype=cpp softtabstop=4 shiftwidth=4 tabstop=4 cindent expandtab: */
-
-/*
-  (C) Copyright 2016 Johns Hopkins University (JHU), All Rights Reserved.
-
---- begin cisst license - do not edit ---
-
-This software is provided "as is" under an open source license, with
-no warranty.  The complete license can be found in license.txt and
-http://www.cisst.org/cisst/license.txt.
-
---- end cisst license ---
-*/
-
+// sawPSMove/components/code/mtsPSMove.cpp
 #include <sawPSMove/mtsPSMove.h>
 
-#include <cisstCommon/cmnLogger.h>
 #include <cisstOSAbstraction/osaSleep.h>
-#include <cisstMultiTask/mtsComponentManager.h>
+#include <cisstMultiTask/mtsInterfaceProvided.h>
+#include <cisstMultiTask/mtsManagerLocal.h>
+#include <cisstCommon/cmnLogger.h>
 
-CMN_IMPLEMENT_SERVICES_DERIVED(mtsPSMove, mtsTaskContinuous);
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 
-mtsPSMove::mtsPSMove(const std::string & name, double periodInSeconds)
-: mtsTaskContinuous(name, periodInSeconds)
+extern "C" {
+#include <psmove.h>
+}
+
+CMN_IMPLEMENT_SERVICES(mtsPSMove)
+
+mtsPSMove::mtsPSMove(const std::string & componentName)
+: mtsTaskContinuous(componentName)
 {
-    StateTable.AddData(M_measured_cp, "measured_cp");
+    Table = &StateTable;
 
-    auto * provided = this->AddInterfaceProvided("Controller");
-    if (provided) {
-        provided->AddCommandReadState(StateTable, M_measured_cp, "measured_cp");
-        provided->AddCommandReadState(StateTable, StateTable.PeriodStats, "GetPeriodStatistics");
+    m_measured_cp.SetValid(false);
+    m_measured_cp.SetMovingFrame("psmove");
+    m_measured_cp.SetReferenceFrame("world");
+    m_measured_cp.SetTimestamp(0.0);
+    vctMatRot3 R; R.Identity();
+    vct3 t(0.0);
+    m_measured_cp.SetPosition(vctFrm3(R, t));
+
+    // State table entries
+    Table->AddData(m_measured_cp, "measured_cp"); // CRTK name
+    Table->AddData(m_accel,       "accel_raw");
+    Table->AddData(m_gyro,        "gyro_raw");
+    Table->AddData(m_trigger,     "trigger");
+    Table->AddData(m_battery,     "battery");
+    Table->AddData(m_buttons,     "buttons");
+
+    // Provided interface
+    Interface = AddInterfaceProvided("Controller");
+    if (Interface) {
+        // CRTK-friendly command name
+        Interface->AddCommandReadState(*Table, m_measured_cp, "measured_cp");
+
+        // Extra reads (handy in Qt and for debugging)
+        Interface->AddCommandReadState(*Table, m_accel,       "GetAccelerometer");
+        Interface->AddCommandReadState(*Table, m_gyro,        "GetGyroscope");
+        Interface->AddCommandReadState(*Table, m_trigger,     "GetTrigger");
+        Interface->AddCommandReadState(*Table, m_battery,     "GetBattery");
+        Interface->AddCommandReadState(*Table, m_buttons,     "GetButtons");
+
+        // Period stats like in OptoForce
+        Interface->AddCommandReadState(*Table, Table->Period,       "GetTaskPeriod");
+        Interface->AddCommandReadState(*Table, Table->PeriodStats,  "get_period_statistics");
+
+        // Write commands
+        Interface->AddCommandWrite(&mtsPSMove::SetLED, this, "SetLED");
+        Interface->AddCommandWrite(&mtsPSMove::SetRumble, this, "SetRumble");
+        Interface->AddCommandVoid(&mtsPSMove::ResetOrientation, this, "ResetOrientation");
     }
+}
+
+mtsPSMove::mtsPSMove(const std::string & componentName,
+                     const std::string & connectionHint)
+: mtsPSMove(componentName) // delegate
+{
+    Configure(connectionHint);
 }
 
 mtsPSMove::~mtsPSMove()
 {
-    // Clean in Cleanup()
+    if (Move) {
+        psmove_set_rumble(Move, 0);
+        psmove_set_leds(Move, 0, 0, 0);
+        psmove_update_leds(Move);
+        psmove_disconnect(Move);
+        Move = nullptr;
+    }
 }
 
-void mtsPSMove::Configure(const std::string &)
+void mtsPSMove::Configure(const std::string &args)
 {
-    // No external JSON; default identity pose until first valid read
+    // Examples: "", "id:1", "1"
+    if (args.empty()) { return; }
+    auto pos = args.find("id:");
+    if (pos != std::string::npos) {
+        ControllerIndex = std::atoi(args.c_str() + pos + 3);
+    } else {
+        // numeric? then treat as index
+        bool numeric = !args.empty() && std::strspn(args.c_str(), "0123456789") == args.size();
+        if (numeric) {
+            ControllerIndex = std::atoi(args.c_str());
+        }
+    }
 }
 
 void mtsPSMove::Startup(void)
 {
-    Move = psmove_connect();
-    if (!Move) {
-        CMN_LOG_CLASS_INIT_ERROR << "PSMove connect failed" << std::endl;
-        M_measured_cp.SetValid(false);
+    int count = psmove_count_connected();
+    if (count <= 0) {
+        CMN_LOG_CLASS_INIT_ERROR << "No PS Move controllers found" << std::endl;
         return;
     }
-    psmove_enable_orientation(Move, PSMove_True);
-
-#ifdef SAW_PSMOVE_HAVE_TRACKER
-    Tracker = psmove_tracker_new();
-    if (Tracker) {
-        // Calibrate tracker for this controller
-        while (psmove_tracker_enable(Tracker, Move) != Tracker_CALIBRATED) { /* retry */ }
+    if (ControllerIndex < 0 || ControllerIndex >= count) {
+        CMN_LOG_CLASS_INIT_WARNING << "Controller index " << ControllerIndex
+                                   << " out of range [0.." << (count-1) << "], using 0" << std::endl;
+        ControllerIndex = 0;
     }
-#endif
 
-    vctFrm3 I; I.Identity();
-    M_measured_cp.SetPosition(I);
-    M_measured_cp.SetValid(false);
+    Move = psmove_connect_by_id(ControllerIndex);
+    if (!Move) {
+        CMN_LOG_CLASS_INIT_ERROR << "Failed to connect to PS Move " << ControllerIndex << std::endl;
+        return;
+    }
 
-    CMN_LOG_CLASS_INIT_VERBOSE << "PSMove started" << std::endl;
+    psmove_set_rate_limiting(Move, 1);
+
+    if (psmove_has_calibration(Move)) {
+        psmove_enable_orientation(Move, 1);
+        OrientationAvailable = (psmove_has_orientation(Move) != 0);
+    } else {
+        OrientationAvailable = false;
+        CMN_LOG_CLASS_INIT_WARNING << "No magnetometer calibration; orientation may be unavailable." << std::endl;
+    }
+
+    // default dim cyan
+    psmove_set_leds(Move, 0, 32, 32);
+    psmove_update_leds(Move);
 }
 
 void mtsPSMove::Run(void)
@@ -73,64 +134,125 @@ void mtsPSMove::Run(void)
     ProcessQueuedCommands();
 
     if (!Move) {
-        M_measured_cp.SetValid(false);
-        osaSleep(0.01);
+        m_measured_cp.SetValid(false);
+        osaSleep(0.005); // don’t spin
         return;
     }
 
-    // Process controller events; allow orientation reset on Move button
+    // poll all pending samples
     while (psmove_poll(Move)) {
-        if (psmove_get_buttons(Move) & Btn_MOVE) {
-            psmove_reset_orientation(Move);
-        }
+        UpdateFromController();
     }
 
-    UpdatePoseFromPSMove();
-    M_measured_cp.SetTimestamp(mtsManagerLocal::GetInstance()->GetTimeServer().GetRelativeTime());
+    // Timestamp from cisst time server
+    m_measured_cp.SetTimestamp(mtsManagerLocal::GetInstance()->GetTimeServer().GetRelativeTime());
+    Table->Advance();
+
+    ProcessQueuedEvents();
 }
 
 void mtsPSMove::Cleanup(void)
 {
-#ifdef SAW_PSMOVE_HAVE_TRACKER
-    if (Tracker) { psmove_tracker_free(Tracker); Tracker = nullptr; }
-#endif
-    if (Move) { psmove_disconnect(Move); Move = nullptr; }
+    // handled in destructor
 }
 
-void mtsPSMove::UpdatePoseFromPSMove()
+void mtsPSMove::UpdateFromController()
 {
-    float q0=0, q1=0, q2=0, q3=0;
-    psmove_get_orientation(Move, &q0, &q1, &q2, &q3); // returns [w,x,y,z]
+    // Buttons & trigger
+    m_buttons = psmove_get_buttons(Move);
+    uint8_t trig = psmove_get_trigger(Move);
+    m_trigger = static_cast<double>(trig) / 255.0;
 
-    const double n2 = q0*q0 + q1*q1 + q2*q2 + q3*q3;
-    if (n2 < 1e-8) {
-        M_measured_cp.SetValid(false);
-        return;
+    // Battery
+    PSMove_Battery_Level b = psmove_get_battery(Move);
+    switch (b) {
+        case Batt_MIN:       m_battery = 0.05; break;
+        case Batt_20Percent: m_battery = 0.20; break;
+        case Batt_40Percent: m_battery = 0.40; break;
+        case Batt_60Percent: m_battery = 0.60; break;
+        case Batt_80Percent: m_battery = 0.80; break;
+        case Batt_MAX:
+        case Batt_CHARGING:  m_battery = 1.00; break;
+        default:             m_battery = 0.0;  break;
     }
 
-    // Quaternion -> rotation
-    vctQuatRot3 qcisst(q0, q1, q2, q3);   // (w,x,y,z)
-    vctRot3 R(qcisst);
+    // Raw IMU
+    float ax, ay, az, gx, gy, gz;
+    psmove_get_accelerometer_frame(Move, Frame_SecondHalf, &ax, &ay, &az);
+    psmove_get_gyroscope_frame(Move, Frame_SecondHalf, &gx, &gy, &gz);
+    m_accel.Assign(ax, ay, az);
+    m_gyro.Assign(gx, gy, gz);
 
-    // Position proxy (0 if tracker unavailable)
-    vct3 p(0.0);
-#ifdef SAW_PSMOVE_HAVE_TRACKER
-    if (Tracker) {
-        psmove_tracker_update_image(Tracker);
-        psmove_tracker_update(Tracker, nullptr);
-        if (psmove_tracker_get_status(Tracker, Move) == Tracker_TRACKING) {
-            float x, y, radius;
-            psmove_tracker_get_position(Tracker, Move, &x, &y, &radius);
-            // Normalize to a crude workspace centered at 0
-            p.X() =  (1.0 - (x / 640.0) * 2.0);   // [-1,1]
-            p.Y() =  (1.0 - (y / 480.0) * 2.0);   // [-1,1]
-            p.Z() =   1.0 - (radius / 150.0);     // approx depth
+    // Orientation → rotation matrix
+    vctMatRot3 R; R.Identity();
+    if (OrientationAvailable) {
+        float qw = 1.0f, qx = 0.0f, qy = 0.0f, qz = 0.0f;
+        // NOTE: In this API variant, psmove_get_orientation returns void.
+        //       We just call it and then sanity-check the result.
+        psmove_get_orientation(Move, &qw, &qx, &qy, &qz);
+
+        const bool ok =
+            std::isfinite(qw) && std::isfinite(qx) &&
+            std::isfinite(qy) && std::isfinite(qz) &&
+            (qw*qw + qx*qx + qy*qy + qz*qz) > 1e-12;
+
+        if (ok) {
+            QuaternionToRotation(qw, qx, qy, qz, R);
+            m_measured_cp.SetValid(true);
+        } else {
+            m_measured_cp.SetValid(false);
         }
+    } else {
+        m_measured_cp.SetValid(false);
     }
-#endif
 
-    vctFrm3 T(R, p);
-    M_measured_cp.SetPosition(T);
-    M_measured_cp.SetValid(true);
+    // Translation unknown without camera tracker; keep zero
+    vct3 t(0.0);
+    m_measured_cp.SetPosition(vctFrm3(R, t));
 }
 
+void mtsPSMove::QuaternionToRotation(double w, double x, double y, double z, vctMatRot3 &R) const
+{
+    const double n = std::sqrt(w*w + x*x + y*y + z*z);
+    if (n > 1e-12) { w/=n; x/=n; y/=n; z/=n; }
+
+    const double xx = x*x, yy = y*y, zz = z*z;
+    const double xy = x*y, xz = x*z, yz = y*z;
+    const double wx = w*x, wy = w*y, wz = w*z;
+
+    R.Element(0,0) = 1.0 - 2.0*(yy + zz);
+    R.Element(0,1) = 2.0*(xy - wz);
+    R.Element(0,2) = 2.0*(xz + wy);
+
+    R.Element(1,0) = 2.0*(xy + wz);
+    R.Element(1,1) = 1.0 - 2.0*(xx + zz);
+    R.Element(1,2) = 2.0*(yz - wx);
+
+    R.Element(2,0) = 2.0*(xz - wy);
+    R.Element(2,1) = 2.0*(yz + wx);
+    R.Element(2,2) = 1.0 - 2.0*(xx + yy);
+}
+
+void mtsPSMove::SetLED(const vctDouble3 &rgb)
+{
+    if (!Move) return;
+    const uint8_t r = static_cast<uint8_t>(Clamp01(rgb[0]) * 255.0);
+    const uint8_t g = static_cast<uint8_t>(Clamp01(rgb[1]) * 255.0);
+    const uint8_t b = static_cast<uint8_t>(Clamp01(rgb[2]) * 255.0);
+    psmove_set_leds(Move, r, g, b);
+    psmove_update_leds(Move);
+}
+
+void mtsPSMove::SetRumble(const double & strength)
+{
+    if (!Move) return;
+    const uint8_t s = static_cast<uint8_t>(Clamp01(strength) * 255.0);
+    psmove_set_rumble(Move, s);
+    psmove_update_leds(Move);
+}
+
+void mtsPSMove::ResetOrientation(void)
+{
+    if (!Move) return;
+    psmove_reset_orientation(Move);
+}

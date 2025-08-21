@@ -1,70 +1,66 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-    */
-/* ex: set filetype=cpp softtabstop=4 shiftwidth=4 tabstop=4 cindent expandtab: */
-
-/*
-  Author(s):  Anton Deguet, Dorothy Hu
-  Created on: 2017-01-20
-
-  (C) Copyright 2017 Johns Hopkins University (JHU), All Rights Reserved.
-
---- begin cisst license - do not edit ---
-
-This software is provided "as is" under an open source license, with
-no warranty.  The complete license can be found in license.txt and
-http://www.cisst.org/cisst/license.txt.
-
---- end cisst license ---
-*/
-
+// sawPSMove/components/include/sawPSMove/mtsPSMoveQtWidget.h
 #pragma once
 
 #include <cisstMultiTask/mtsComponent.h>
-#include <cisstMultiTask/mtsQtWidgetIntervalStatistics.h>
+#include <cisstMultiTask/mtsFunctionRead.h>
+#include <cisstMultiTask/mtsFunctionWrite.h>
 #include <cisstParameterTypes/prmPositionCartesianGet.h>
 
+#include <QObject>  // needed for Q_OBJECT/Q_SLOTS
 #include <QWidget>
+#include <QTimer>
 #include <QLabel>
+#include <QDoubleSpinBox>
+#include <QPushButton>
 #include <QGridLayout>
-#include <QTimerEvent>
 
 #include <sawPSMove/sawPSMoveQtExport.h>
 
-class CISST_EXPORT mtsPSMoveQtWidget : public QWidget, public mtsComponent
+class SAW_PSMOVE_QT_EXPORT mtsPSMoveQtWidget : public QWidget, public mtsComponent
 {
-    Q_OBJECT;
-    CMN_DECLARE_SERVICES(CMN_DYNAMIC_CREATION_ONEARG, CMN_LOG_ALLOW_ALL);
+    Q_OBJECT
+    CMN_DECLARE_SERVICES(CMN_NO_DYNAMIC_CREATION, CMN_LOG_LOD_RUN_ERROR)
 
 public:
-    mtsPSMoveQtWidget(const std::string & componentName,
-                      double periodInSeconds = 50.0 * cmn_ms);
-    ~mtsPSMoveQtWidget() override {}
+    mtsPSMoveQtWidget(const std::string &name, QWidget *parent = nullptr);
+    ~mtsPSMoveQtWidget() override;
 
-    void Configure(const std::string & filename = "") override;
+    void Configure(const std::string &args) override {}
     void Startup(void) override;
     void Cleanup(void) override;
 
-protected:
-    void timerEvent(QTimerEvent * event) override;
+private Q_SLOTS:
+    void OnTimer();
+    void OnSetLED();
+    void OnRumbleChanged(double v);
+    void OnResetOrientation();
 
 private:
-    void setupUi(void);
-    void setPoseLabels(const prmPositionCartesianGet & cp);
-
-    struct {
-        mtsFunctionRead MeasuredCP;
-        mtsFunctionRead GetPeriodStatistics;
-        prmPositionCartesianGet CP;
-    } Dev;
+    // Required interface
+    mtsFunctionRead GetPositionCartesian;
+    mtsFunctionRead GetButtons;
+    mtsFunctionRead GetTrigger;
+    mtsFunctionRead GetPeriodStats;
+    mtsFunctionRead GetBattery;
+    mtsFunctionWrite SetLED;
+    mtsFunctionWrite SetRumble;
+    mtsFunctionVoid  ResetOrientation;
 
     // UI
-    QLabel * lblPosX{nullptr};
-    QLabel * lblPosY{nullptr};
-    QLabel * lblPosZ{nullptr};
-    QLabel * lblRoll{nullptr};
-    QLabel * lblPitch{nullptr};
-    QLabel * lblYaw{nullptr};
-    mtsQtWidgetIntervalStatistics * statsWidget{nullptr};
+    QTimer *Timer{nullptr};
+    QLabel *PoseQ{nullptr};
+    QLabel *PoseRPY{nullptr};
+    QLabel *Buttons{nullptr};
+    QLabel *Trigger{nullptr};
+    QLabel *Battery{nullptr};
+    QDoubleSpinBox *Rumble{nullptr};
+    QDoubleSpinBox *LED_R{nullptr};
+    QDoubleSpinBox *LED_G{nullptr};
+    QDoubleSpinBox *LED_B{nullptr};
+    QPushButton *LED_Set{nullptr};
+    QPushButton *ResetOri{nullptr};
 
-    int TimerPeriodMs;
+    // helpers
+    static void RotationToRPY(const vctMatRot3 &R, double &r, double &p, double &y);
 };
-CMN_DECLARE_SERVICES_INSTANTIATION(mtsPSMoveQtWidget);
+CMN_DECLARE_SERVICES_INSTANTIATION(mtsPSMoveQtWidget)

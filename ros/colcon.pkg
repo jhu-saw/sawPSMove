@@ -1,0 +1,4 @@
+{
+  "name": "psmove",
+  "dependencies": ["cisst_ros_crtk", "sawPSMoveCore"]
+}
