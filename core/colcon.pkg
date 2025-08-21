@@ -1,0 +1,4 @@
+{
+  "name": "sawPSMoveCore",
+  "dependencies": ["cisst"]
+}

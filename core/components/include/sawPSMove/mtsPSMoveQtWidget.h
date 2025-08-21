@@ -25,7 +25,7 @@ public:
     mtsPSMoveQtWidget(const std::string &name, QWidget *parent = nullptr);
     ~mtsPSMoveQtWidget() override;
 
-    void Configure(const std::string &args) override {}
+    void Configure(const std::string &) override {}
     void Startup(void) override;
     void Cleanup(void) override;
 

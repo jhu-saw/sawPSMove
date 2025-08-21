@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>psmove_ros</name>
-  <version>1.0.0</version>
+  <name>psmove</name>
+  <version>0.1.0</version>
   <description>ROS wrapper for sawPSMove (dual ROS1/ROS2, CRTK bridge + optional Qt UI)</description>
   <maintainer email="anton@example.org">Anton Deguet</maintainer>
   <license>cisst</license>

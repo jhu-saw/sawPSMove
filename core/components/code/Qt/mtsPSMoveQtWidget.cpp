@@ -15,7 +15,7 @@ mtsPSMoveQtWidget::mtsPSMoveQtWidget(const std::string &name, QWidget *parent)
 , mtsComponent(name)
 {
     // Required interface to the device (OptoForce pattern)
-    mtsInterfaceRequired *req = AddInterfaceRequired("Device");
+    mtsInterfaceRequired *req = AddInterfaceRequired("device");
     if (req) {
         req->AddFunction("measured_cp",       GetPositionCartesian);
         req->AddFunction("GetButtons",        GetButtons);

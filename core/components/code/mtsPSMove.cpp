@@ -11,7 +11,7 @@
 #include <cstring>
 
 extern "C" {
-#include <psmove.h>
+#include <psmoveapi/psmove.h>
 }
 
 CMN_IMPLEMENT_SERVICES(mtsPSMove)
@@ -38,7 +38,7 @@ mtsPSMove::mtsPSMove(const std::string & componentName)
     Table->AddData(m_buttons,     "buttons");
 
     // Provided interface
-    Interface = AddInterfaceProvided("Controller");
+    Interface = AddInterfaceProvided("controller");
     if (Interface) {
         // CRTK-friendly command name
         Interface->AddCommandReadState(*Table, m_measured_cp, "measured_cp");
