@@ -52,6 +52,9 @@ mtsPSMove::mtsPSMove(const std::string & componentName)
     // Provided interface
     m_interface = AddInterfaceProvided("controller");
     if (m_interface) {
+
+        m_interface->AddMessageEvents();
+
         // CRTK-friendly command name
         m_interface->AddCommandReadState(StateTable, m_measured_cp, "measured_cp");
 
@@ -63,7 +66,7 @@ mtsPSMove::mtsPSMove(const std::string & componentName)
         m_interface->AddCommandReadState(StateTable, m_buttons,     "get_buttons");
 
         // Period stats
-        m_interface->AddCommandReadState(StateTable, StateTable.PeriodStats,  "get_period_statistics");
+        m_interface->AddCommandReadState(StateTable, StateTable.PeriodStats,  "period_statistics");
 
         // Write commands
         m_interface->AddCommandWrite(&mtsPSMove::set_LED, this, "set_LED");
@@ -130,6 +133,8 @@ void mtsPSMove::Startup(void)
         m_orientation_available = false;
         CMN_LOG_CLASS_INIT_WARNING << "No magnetometer calibration; orientation may be unavailable." << std::endl;
     }
+
+    m_interface->SendStatus("Testing");
 
     // default dim cyan
     psmove_set_leds(m_move_handle, 0, 32, 32);

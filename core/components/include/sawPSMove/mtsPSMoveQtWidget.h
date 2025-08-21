@@ -28,16 +28,21 @@ http://www.cisst.org/cisst/license.txt.
 
 #include <QWidget>
 
+class mtsInterfaceRequired;
 class QLabel;
 class QDoubleSpinBox;
 class QPushButton;
+class mtsIntervalStatisticsQtWidget;
+class mtsMessageQtWidget;
+class prmPositionCartesianGetQtWidget;
 
+// Always include last
 #include <sawPSMove/sawPSMoveQtExport.h>
 
-class SAW_PSMOVE_QT_EXPORT mtsPSMoveQtWidget : public QWidget, public mtsComponent
+class CISST_EXPORT mtsPSMoveQtWidget: public QWidget, public mtsComponent
 {
-    Q_OBJECT
-    CMN_DECLARE_SERVICES(CMN_NO_DYNAMIC_CREATION, CMN_LOG_LOD_RUN_ERROR)
+    Q_OBJECT;
+    CMN_DECLARE_SERVICES(CMN_NO_DYNAMIC_CREATION, CMN_LOG_LOD_RUN_ERROR);
 
 public:
     mtsPSMoveQtWidget(const std::string &name, QWidget *parent = nullptr);
@@ -54,9 +59,11 @@ private Q_SLOTS:
     void OnResetOrientation();
 
 private:
-    // Required interface
+
+    mtsInterfaceRequired * m_device_interface = nullptr;
+
 	struct {
-        mtsFunctionRead get_period_statistics;
+        mtsFunctionRead period_statistics;
         mtsFunctionRead measured_cp;
         mtsFunctionRead get_buttons;
         mtsFunctionRead get_trigger;
@@ -68,7 +75,6 @@ private:
 
     // UI
     QTimer *Timer{nullptr};
-    QLabel *PoseQ{nullptr};
     QLabel *Buttons{nullptr};
     QLabel *Trigger{nullptr};
     QLabel *Battery{nullptr};
@@ -78,6 +84,11 @@ private:
     QDoubleSpinBox *LED_B{nullptr};
     QPushButton *LED_Set{nullptr};
     QPushButton *ResetOri{nullptr};
+
+    mtsIntervalStatisticsQtWidget * QMIntervalStatistics = nullptr;
+    mtsMessageQtWidget * QMMessage = nullptr;
+    prmPositionCartesianGetQtWidget * QPCGWidget = nullptr;
+
 };
 
 CMN_DECLARE_SERVICES_INSTANTIATION(mtsPSMoveQtWidget);

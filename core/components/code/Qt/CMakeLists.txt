@@ -1,55 +1,51 @@
-# sawPSMove/components/code/Qt/CMakeLists.txt
-cmake_minimum_required(VERSION 3.10)
+#
+# (C) Copyright 2025 Johns Hopkins University (JHU), All Rights Reserved.
+#
+# --- begin cisst license - do not edit ---
+#
+# This software is provided "as is" under an open source license, with
+# no warranty.  The complete license can be found in license.txt and
+# http://www.cisst.org/cisst/license.txt.
+#
+# --- end cisst license ---
 
-# cisst Qt stacks needed by the widget (same set OptoForce uses)
-set(REQUIRED_CISST_LIBRARIES
-  cisstCommon
-  cisstVector
-  cisstVectorQt
-  cisstOSAbstraction
-  cisstMultiTask
-  cisstParameterTypes
-  cisstMultiTaskQt
-  cisstQt)
+set (REQUIRED_CISST_LIBRARIES
+     cisstCommon
+     cisstVector
+     cisstVectorQt
+     cisstOSAbstraction
+     cisstMultiTask
+     cisstMultiTaskQt
+     cisstParameterTypes
+     cisstParameterTypesQt
+     cisstQt)
 
-find_package(cisst REQUIRED ${REQUIRED_CISST_LIBRARIES})
-include(${CISST_USE_FILE})
+# cisst
+find_package (cisst REQUIRED ${REQUIRED_CISST_LIBRARIES})
 
-# Qt only in this sublibrary
-find_package(Qt5 REQUIRED COMPONENTS Widgets)
-set(CMAKE_AUTOMOC ON)
+if (cisst_FOUND_AS_REQUIRED)
 
-# Header dir for MOC + exports
-set(sawPSMove_HEADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../include/sawPSMove")
+  # cisst
+  include (${CISST_USE_FILE})
 
-# Build the Qt sublibrary (separate target, avoids CMP0079 issues)
-add_library(sawPSMoveQt
-  ${sawPSMove_HEADER_DIR}/sawPSMoveQtExport.h
-  ${sawPSMove_HEADER_DIR}/mtsPSMoveQtWidget.h
-  mtsPSMoveQtWidget.cpp
-)
+  # for Qt generated header files
+  include_directories (${CMAKE_CURRENT_BINARY_DIR})
+  set (CMAKE_AUTOMOC ON)
 
-target_include_directories(sawPSMoveQt
-  PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
-)
+  add_library (sawPSMoveQt
+               ${sawPSMove_HEADER_DIR}/mtsPSMoveQtWidget.h
+               mtsPSMoveQtWidget.cpp
+               ${SAW_FORCE_DIMENSION_SDK_QT_WRAP_CPP})
+  set_target_properties (sawPSMoveQt PROPERTIES
+                         VERSION ${sawPSMove_VERSION}
+                         FOLDER "sawPSMove")
+  cisst_target_link_libraries (sawPSMoveQt ${REQUIRED_CISST_LIBRARIES})
 
-# >>> Use PLAIN signature to match cisst_target_link_libraries <<<
-target_link_libraries(sawPSMoveQt Qt5::Widgets)
-target_compile_definitions(sawPSMoveQt PRIVATE -DQT_NO_KEYWORDS)
+  install (TARGETS sawPSMoveQt COMPONENT sawPSMove-Qt
+           RUNTIME DESTINATION bin
+           LIBRARY DESTINATION lib
+           ARCHIVE DESTINATION lib)
 
-# cisst adds its libs with the plain signature too
-cisst_target_link_libraries(sawPSMoveQt ${REQUIRED_CISST_LIBRARIES})
-
-set_target_properties(sawPSMoveQt PROPERTIES
-  CXX_STANDARD 14
-  CXX_STANDARD_REQUIRED YES
-  POSITION_INDEPENDENT_CODE ON
-)
-
-# Install the Qt sublibrary
-install(TARGETS sawPSMoveQt
-  RUNTIME DESTINATION bin
-  LIBRARY DESTINATION lib
-  ARCHIVE DESTINATION lib
-)
+else (cisst_FOUND_AS_REQUIRED)
+  message ("Information: code will not be compiled, it requires ${REQUIRED_CISST_LIBRARIES}")
+endif (cisst_FOUND_AS_REQUIRED)

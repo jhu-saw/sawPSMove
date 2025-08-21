@@ -27,3 +27,7 @@ include (CPack)
 cpack_add_component (sawPSMove)
 cpack_add_component (sawPSMove-dev
                      DEPENDS sawPSMove)
+cpack_add_component (sawPSMove-Qt
+                     DEPENDS sawPSMove)
+cpack_add_component (sawPSMove-Examples
+                     DEPENDS sawPSMove sawPSMove-Qt)
