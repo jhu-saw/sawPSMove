@@ -1,102 +1,138 @@
-/* -*- Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-    */
+/* ex: set filetype=cpp softtabstop=4 shiftwidth=4 tabstop=4 cindent expandtab: */
+
+/*
+  Author(s):  Anton Deguet
+  Created on: 2025-08-21
+
+  (C) Copyright 2025 Johns Hopkins University (JHU), All Rights Reserved.
+
+--- begin cisst license - do not edit ---
+
+This software is provided "as is" under an open source license, with
+no warranty.  The complete license can be found in license.txt and
+http://www.cisst.org/cisst/license.txt.
+
+--- end cisst license ---
+*/
+
 #include <cisstCommon/cmnUnits.h>
-#include <cisstCommon/cmnGetChar.h>
 #include <cisstCommon/cmnCommandLineOptions.h>
 #include <cisstCommon/cmnQt.h>
 #include <cisstMultiTask/mtsTaskManager.h>
-
 #include <sawPSMove/mtsPSMove.h>
 #include <sawPSMove/mtsPSMoveQtWidget.h>
 
-#include <cisst_ros_crtk/mts_ros_crtk_bridge_provided.h>
-
 #include <QApplication>
+#include <QMainWindow>
+
+#include <cisst_ros_crtk/mts_ros_crtk_bridge.h>
 
 int main(int argc, char * argv[])
 {
-    // Logging
+    // log configuration
     cmnLogger::SetMask(CMN_LOG_ALLOW_ALL);
     cmnLogger::SetMaskFunction(CMN_LOG_ALLOW_ALL);
     cmnLogger::SetMaskDefaultLog(CMN_LOG_ALLOW_ALL);
+    cmnLogger::SetMaskClassMatching("mtsPSMove", CMN_LOG_ALLOW_ALL);
     cmnLogger::AddChannel(std::cerr, CMN_LOG_ALLOW_ERRORS_AND_WARNINGS);
 
-    // ROS node
-    cisst_ral::ral ral(argc, argv, "psmove");
-    auto rosNode = ral.node();
+    // create ROS node handle
+    cisst_ral::ral ral(argc, argv, "joystick");
+    auto ros_node = ral.node();
 
-    // CLI
+    // parse options
     cmnCommandLineOptions options;
-    std::string connectionHint = "";     // e.g., "id:1" or "1"
-    std::list<std::string> managerCfg;
-    double rosPeriod = 10.0 * cmn_ms;
-    bool textOnly = false;
-    bool darkMode = false;
+    std::string json_config_file = "";
+    double ros_period = 2.0 * cmn_ms;
+    double tf_period = 20.0 * cmn_ms;
+    std::list<std::string> manager_config;
 
-    options.AddOptionOneValue("c", "connection",
-                              "PSMove connection hint (index: 'id:N' or 'N')",
-                              cmnCommandLineOptions::OPTIONAL_OPTION, &connectionHint);
+    options.AddOptionOneValue("j", "json-config",
+                              "json configuration file",
+                              cmnCommandLineOptions::OPTIONAL_OPTION, &json_config_file);
+    options.AddOptionOneValue("p", "ros-period",
+                              "period in seconds to read all tool positions (default 0.002, 2 ms, 500Hz).  There is no point to have a period higher than the device",
+                              cmnCommandLineOptions::OPTIONAL_OPTION, &ros_period);
+    options.AddOptionOneValue("P", "tf-ros-period",
+                              "period in seconds to read all components and broadcast tf2 (default 0.02, 20 ms, 50Hz).",
+                              cmnCommandLineOptions::OPTIONAL_OPTION, &tf_period);
+
     options.AddOptionMultipleValues("m", "component-manager",
                                     "JSON files to configure component manager",
-                                    cmnCommandLineOptions::OPTIONAL_OPTION, &managerCfg);
-    options.AddOptionOneValue("p", "ros-period",
-                              "bridge period in seconds (default 0.01s)",
-                              cmnCommandLineOptions::OPTIONAL_OPTION, &rosPeriod);
-    options.AddOptionNoValue("t", "text-only", "no Qt widgets");
-    options.AddOptionNoValue("D", "dark-mode", "Qt dark palette");
-    if (!options.Parse(argc, argv, std::cerr)) {
+                                    cmnCommandLineOptions::OPTIONAL_OPTION, &manager_config);
+    options.AddOptionNoValue("D", "dark-mode",
+                             "replaces the default Qt palette with darker colors");
+
+    // check that all required options have been provided
+    if (!options.Parse(ral.stripped_arguments(), std::cerr)) {
         return -1;
     }
-    textOnly = options.IsSet("text-only");
-    darkMode = options.IsSet("dark-mode");
+    std::string arguments;
+    options.PrintParsedArguments(arguments);
+    std::cout << "Options provided:" << std::endl << arguments << std::endl;
 
-    // SAW component
-    mtsPSMove * device = connectionHint.empty()
-        ? new mtsPSMove("PSMove")
-        : new mtsPSMove("PSMove", connectionHint);
+    // create the components
+    mtsPSMove * ps_move = new mtsPSMove("PSMove");
+    ps_move->Configure(json_config_file);
 
-    auto * cm = mtsComponentManager::GetInstance();
-    cm->AddComponent(device);
+    // add the components to the component manager
+    mtsManagerLocal * component_manager = mtsComponentManager::GetInstance();
+    component_manager->AddComponent(ps_move);
 
-    // CRTK ROS bridge (namespace "psmove")
-    auto * bridge = new mts_ros_crtk_bridge_provided("psmove_crtk_bridge", rosNode);
-    cm->AddComponent(bridge);
+    // ROS CRTK bridge
+    mts_ros_crtk_bridge_provided * crtk_bridge
+        = new mts_ros_crtk_bridge_provided("psmove_crtk_bridge", ros_node);
 
-    bridge->bridge_interface_provided(device->GetName(),
-                                      "Controller",
-                                      "psmove",
-                                      rosPeriod);
-    bridge->Connect();
-
-    // Optional Qt UI
-    QApplication * app = nullptr;
-    mtsPSMoveQtWidget * widget = nullptr;
-    if (!textOnly) {
-        app = new QApplication(argc, argv);
-        cmnQt::QApplicationExitsOnCtrlC();
-        if (darkMode) cmnQt::SetDarkMode();
-        widget = new mtsPSMoveQtWidget("PSMove-GUI");
-        cm->AddComponent(widget);
-        cm->Connect(widget->GetName(), "Device",
-                    device->GetName(), "Controller");
+    // create a Qt user interface
+    QApplication application(argc, argv);
+    cmnQt::QApplicationExitsOnCtrlC();
+    if (options.IsSet("dark-mode")) {
+        cmnQt::SetDarkMode();
     }
 
-    if (!cm->ConfigureJSON(managerCfg)) {
-        CMN_LOG_INIT_ERROR << "Failed to configure component-manager (see cisstLog)" << std::endl;
+    // organize all widgets in a tab widget
+    QTabWidget * tab_widget = new QTabWidget;
+    mtsPSMoveQtWidget * device_widget;
+
+    // Qt Widget(s)
+    std::list<std::string> devices = {"controller"};
+    // ps_move->get_device_names(devices);
+    for (const auto & device : devices) {
+        device_widget = new mtsPSMoveQtWidget(device + "-gui");
+        component_manager->AddComponent(device_widget);
+        component_manager->Connect(device_widget->GetName(), "device",
+                                   ps_move->GetName(), device);
+        tab_widget->addTab(device_widget, device.c_str());
+    }
+
+    crtk_bridge->bridge_all_interfaces_provided(ps_move->GetName(), "",
+                                                ros_period, tf_period);
+    crtk_bridge->Connect();
+
+    // custom user components
+    if (!component_manager->ConfigureJSON(manager_config)) {
+        CMN_LOG_INIT_ERROR << "Configure: failed to configure component-manager, check cisstLog for error messages" << std::endl;
         return -1;
     }
 
-    cm->CreateAllAndWait(5.0 * cmn_s);
-    cm->StartAllAndWait(5.0 * cmn_s);
+    // create and start all components
+    component_manager->CreateAllAndWait(5.0 * cmn_s);
+    component_manager->StartAllAndWait(5.0 * cmn_s);
 
-    if (widget) { widget->show(); app->exec(); }
-    else {
-        std::cout << "Press 'q' to quit" << std::endl;
-        while (cmnGetChar() != 'q') { /* spin */ }
-    }
+    // run Qt user interface
+    tab_widget->show();
+    application.exec();
 
-    cisst_ral::shutdown();
-    cm->KillAllAndWait(5.0 * cmn_s);
-    cm->Cleanup();
+    // stop all logs
     cmnLogger::Kill();
+
+    // stop ROS node
+    cisst_ral::shutdown();
+
+    // kill all components and perform cleanup
+    component_manager->KillAllAndWait(5.0 * cmn_s);
+    component_manager->Cleanup();
+
     return 0;
 }

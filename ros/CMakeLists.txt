@@ -1,5 +1,5 @@
 #
-# (C) Copyright 2015-2024 Johns Hopkins University (JHU), All Rights Reserved.
+# (C) Copyright 2025 Johns Hopkins University (JHU), All Rights Reserved.
 #
 # --- begin cisst license - do not edit ---
 #
@@ -10,7 +10,7 @@
 # --- end cisst license ---
 
 cmake_minimum_required(VERSION 3.10)
-project (psmove_ros VERSION 0.1.0)
+project (psmove VERSION 0.1.0)
 
 # first test for ROS1
 set (ROS1_depends cisst_ros_crtk roscpp roslib)
@@ -72,7 +72,7 @@ if (cisst_FOUND_AS_REQUIRED)
   if (sawPSMove_FOUND)
 
     # sawPSMove configuration
-    include_directories (${CATKIN_DEVEL_PREFIX}/include ${sawPSMove_INCLUDE_DIR} ${PSMOVE_INCLUDE_DIR} "$ENV{PSMOVE_BUILD}")
+    include_directories (${CATKIN_DEVEL_PREFIX}/include ${sawPSMove_INCLUDE_DIR})
 
     link_directories (${sawPSMove_LIBRARY_DIR})
 
@@ -101,19 +101,3 @@ if (cisst_FOUND_AS_REQUIRED)
   endif (sawPSMove_FOUND)
 
 endif (cisst_FOUND_AS_REQUIRED)
-
-# cmake_minimum_required(VERSION 3.10)
-# project (sawPSMove VERSION 0.1.0)
-
-# find_package (cisst REQUIRED)
-# include (${CISST_USE_FILE})
-# cisst_cpack_settings (
-#   VENDOR "JHU"
-#   MAINTAINER "anton.deguet@jhu.edu")
-
-# add_subdirectory (components)
-
-# set (sawPSMove_DIR "${sawPSMove_BINARY_DIR}/components")
-
-# include (CPack)
-# cpack_add_component (sawPSMove)
