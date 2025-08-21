@@ -1,35 +1,52 @@
-// sawPSMove/components/code/Qt/mtsPSMoveQtWidget.cpp
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-    */
+/* ex: set filetype=cpp softtabstop=4 shiftwidth=4 tabstop=4 cindent expandtab: */
+
+/*
+  Author(s):  Aravind S Kumar, Anton Deguet
+  Created on: 2025-08-21
+  
+  (C) Copyright 2025 Johns Hopkins University (JHU), All Rights Reserved.
+  
+--- begin cisst license - do not edit ---
+  
+This software is provided "as is" under an open source license, with
+no warranty.  The complete license can be found in license.txt and
+http://www.cisst.org/cisst/license.txt.
+
+--- end cisst license ---
+*/
+
 #include <sawPSMove/mtsPSMoveQtWidget.h>
 
 #include <cisstMultiTask/mtsInterfaceRequired.h>
-#include <cisstVector/vctMatrixRotation3.h>
-#include <cisstVector/vctQuaternionRotation3.h>
 
 #include <QHBoxLayout>
-#include <cmath>
+#include <QLabel>
+#include <QDoubleSpinBox>
+#include <QPushButton>
+#include <QTimer>
 
-CMN_IMPLEMENT_SERVICES(mtsPSMoveQtWidget)
+CMN_IMPLEMENT_SERVICES(mtsPSMoveQtWidget);
 
-mtsPSMoveQtWidget::mtsPSMoveQtWidget(const std::string &name, QWidget *parent)
-: QWidget(parent)
-, mtsComponent(name)
+mtsPSMoveQtWidget::mtsPSMoveQtWidget(const std::string &name, QWidget *parent):
+    QWidget(parent),
+    mtsComponent(name)
 {
     // Required interface to the device (OptoForce pattern)
-    mtsInterfaceRequired *req = AddInterfaceRequired("device");
-    if (req) {
-        req->AddFunction("measured_cp",       GetPositionCartesian);
-        req->AddFunction("GetButtons",        GetButtons);
-        req->AddFunction("GetTrigger",        GetTrigger);
-        req->AddFunction("GetBattery",        GetBattery);
-        req->AddFunction("SetLED",            SetLED);
-        req->AddFunction("SetRumble",         SetRumble);
-        req->AddFunction("ResetOrientation",  ResetOrientation);
-        req->AddFunction("get_period_statistics", GetPeriodStats);
+    mtsInterfaceRequired * interface_required = AddInterfaceRequired("device");
+    if (interface_required) {
+        interface_required->AddFunction("measured_cp", device.measured_cp);
+        interface_required->AddFunction("get_buttons", device.get_buttons);
+        interface_required->AddFunction("get_trigger", device.get_trigger);
+        interface_required->AddFunction("get_battery", device.get_battery);
+        interface_required->AddFunction("set_LED", device.set_LED);
+        interface_required->AddFunction("set_rumble", device.set_rumble);
+        interface_required->AddFunction("reset_orientation", device.reset_orientation);
+        interface_required->AddFunction("get_period_statistics", device.get_period_statistics);
     }
 
     auto *layout = new QGridLayout(this);
     PoseQ     = new QLabel("q=[0,0,0,1]");
-    PoseRPY   = new QLabel("rpy=[0,0,0] deg");
     Buttons   = new QLabel("buttons=0x00000000");
     Trigger   = new QLabel("trigger=0.00");
     Battery   = new QLabel("battery=0.00");
@@ -44,7 +61,6 @@ mtsPSMoveQtWidget::mtsPSMoveQtWidget(const std::string &name, QWidget *parent)
     int row = 0;
     layout->addWidget(new QLabel("<b>Orientation</b>"), row++, 0, 1, 2);
     layout->addWidget(PoseQ,   row++, 0, 1, 2);
-    layout->addWidget(PoseRPY, row++, 0, 1, 2);
 
     layout->addWidget(new QLabel("<b>Inputs</b>"), row++, 0, 1, 2);
     layout->addWidget(Buttons, row++, 0, 1, 2);
@@ -85,31 +101,24 @@ void mtsPSMoveQtWidget::Cleanup(void)
 void mtsPSMoveQtWidget::OnTimer()
 {
     prmPositionCartesianGet cp;
-    if (GetPositionCartesian(cp).IsOK()) {
+    if (device.measured_cp(cp).IsOK()) {
         const vctMatRot3 &R = cp.Position().Rotation();
         vctQuatRot3 q(R, VCT_NORMALIZE);
         PoseQ->setText(QString("q=[%1, %2, %3, %4]")
             .arg(q.X(), 0, 'f', 3).arg(q.Y(), 0, 'f', 3)
             .arg(q.Z(), 0, 'f', 3).arg(q.W(), 0, 'f', 3));
-
-        double roll, pitch, yaw;
-        RotationToRPY(R, roll, pitch, yaw);
-        PoseRPY->setText(QString("rpy=[%1, %2, %3] deg")
-            .arg(roll * 180.0/M_PI, 0, 'f', 1)
-            .arg(pitch* 180.0/M_PI, 0, 'f', 1)
-            .arg(yaw  * 180.0/M_PI, 0, 'f', 1));
     }
 
     unsigned int btn = 0;
-    if (GetButtons(btn).IsOK()) {
+    if (device.get_buttons(btn).IsOK()) {
         Buttons->setText(QString("buttons=0x%1").arg(QString::number(btn, 16).rightJustified(8, '0')));
     }
     double trig = 0.0;
-    if (GetTrigger(trig).IsOK()) {
+    if (device.get_trigger(trig).IsOK()) {
         Trigger->setText(QString("trigger=%1").arg(trig, 0, 'f', 2));
     }
     double bat = 0.0;
-    if (GetBattery(bat).IsOK()) {
+    if (device.get_battery(bat).IsOK()) {
         Battery->setText(QString("battery=%1").arg(bat, 0, 'f', 2));
     }
 }
@@ -117,25 +126,13 @@ void mtsPSMoveQtWidget::OnTimer()
 void mtsPSMoveQtWidget::OnSetLED()
 {
     vctDouble3 rgb(LED_R->value(), LED_G->value(), LED_B->value());
-    SetLED(rgb);
+    device.set_LED(rgb);
 }
 void mtsPSMoveQtWidget::OnRumbleChanged(double v)
 {
-    SetRumble(v);
+    device.set_rumble(v);
 }
 void mtsPSMoveQtWidget::OnResetOrientation()
 {
-    ResetOrientation();
-}
-
-void mtsPSMoveQtWidget::RotationToRPY(const vctMatRot3 &R, double &r, double &p, double &y)
-{
-    p = std::asin(-R[2][0]);
-    if (std::cos(p) > 1e-6) {
-        r = std::atan2(R[2][1], R[2][2]);
-        y = std::atan2(R[1][0], R[0][0]);
-    } else {
-        r = std::atan2(-R[1][2], R[1][1]);
-        y = 0.0;
-    }
+    device.reset_orientation();
 }

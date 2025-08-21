@@ -1,5 +1,25 @@
-// sawPSMove/components/include/sawPSMove/mtsPSMove.h
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-    */
+/* ex: set filetype=cpp softtabstop=4 shiftwidth=4 tabstop=4 cindent expandtab: */
+
+/*
+  Author(s):  Aravind S Kumar, Anton Deguet
+  Created on: 2025-08-19
+
+  (C) Copyright 2025 Johns Hopkins University (JHU), All Rights Reserved.
+
+--- begin cisst license - do not edit ---
+
+This software is provided "as is" under an open source license, with
+no warranty.  The complete license can be found in license.txt and
+http://www.cisst.org/cisst/license.txt.
+
+--- end cisst license ---
+*/
+
 #pragma once
+
+#ifndef _mtsPSMove_h
+#define _mtsPSMove_h
 
 #include <cisstMultiTask/mtsTaskContinuous.h>
 #include <cisstParameterTypes/prmPositionCartesianGet.h>
@@ -13,7 +33,7 @@
 struct _PSMove;
 typedef struct _PSMove PSMove;
 
-class SAW_PSMOVE_EXPORT mtsPSMove : public mtsTaskContinuous
+class CISST_EXPORT mtsPSMove: public mtsTaskContinuous
 {
     CMN_DECLARE_SERVICES(CMN_NO_DYNAMIC_CREATION, CMN_LOG_ALLOW_DEFAULT);
 
@@ -32,15 +52,15 @@ public:
     void Cleanup(void) override;
 
     // Utility commands
-    void SetLED(const vctDouble3 &rgb);    // 0..1
-    void SetRumble(const double & strength); // 0..1
-    void ResetOrientation(void);
+    void set_LED(const vctDouble3 &rgb);    // 0..1
+    void set_rumble(const double & strength); // 0..1
+    void reset_orientation(void);
 
 protected:
     // PSMove handle
-    PSMove *Move{nullptr};
-    int ControllerIndex{0};
-    bool OrientationAvailable{false};
+    PSMove * m_move_handle = nullptr;
+    int m_controller_index = 0;
+    bool m_orientation_available = false;
 
     // State
     prmPositionCartesianGet m_measured_cp;    // Pose
@@ -50,15 +70,13 @@ protected:
     double m_trigger{0.0};                    // 0..1
     double m_battery{0.0};                    // 0..1 (approx)
 
-    // State table
-    mtsStateTable *Table{nullptr};
-
     // Provided interface
-    mtsInterfaceProvided *Interface{nullptr};
+    mtsInterfaceProvided * m_interface = nullptr;
 
     // Internals
-    void UpdateFromController();
-    void QuaternionToRotation(double w, double x, double y, double z, vctMatRot3 &R) const;
-    static double Clamp01(double v) { return (v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v)); }
+    void update_data(void);
 };
-CMN_DECLARE_SERVICES_INSTANTIATION(mtsPSMove)
+
+CMN_DECLARE_SERVICES_INSTANTIATION(mtsPSMove);
+
+#endif // _mtsPSMove_h

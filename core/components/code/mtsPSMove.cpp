@@ -1,4 +1,21 @@
-// sawPSMove/components/code/mtsPSMove.cpp
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-    */
+/* ex: set filetype=cpp softtabstop=4 shiftwidth=4 tabstop=4 cindent expandtab: */
+
+/*
+  Author(s):  Aravind S Kumar, Anton Deguet
+  Created on: 2025-08-19
+
+  (C) Copyright 2025 Johns Hopkins University (JHU), All Rights Reserved.
+
+--- begin cisst license - do not edit ---
+
+This software is provided "as is" under an open source license, with
+no warranty.  The complete license can be found in license.txt and
+http://www.cisst.org/cisst/license.txt.
+
+--- end cisst license ---
+*/
+
 #include <sawPSMove/mtsPSMove.h>
 
 #include <cisstOSAbstraction/osaSleep.h>
@@ -19,65 +36,54 @@ CMN_IMPLEMENT_SERVICES(mtsPSMove)
 mtsPSMove::mtsPSMove(const std::string & componentName)
 : mtsTaskContinuous(componentName)
 {
-    Table = &StateTable;
-
     m_measured_cp.SetValid(false);
     m_measured_cp.SetMovingFrame("psmove");
     m_measured_cp.SetReferenceFrame("world");
     m_measured_cp.SetTimestamp(0.0);
-    vctMatRot3 R; R.Identity();
-    vct3 t(0.0);
-    m_measured_cp.SetPosition(vctFrm3(R, t));
 
     // State table entries
-    Table->AddData(m_measured_cp, "measured_cp"); // CRTK name
-    Table->AddData(m_accel,       "accel_raw");
-    Table->AddData(m_gyro,        "gyro_raw");
-    Table->AddData(m_trigger,     "trigger");
-    Table->AddData(m_battery,     "battery");
-    Table->AddData(m_buttons,     "buttons");
+    StateTable.AddData(m_measured_cp, "measured_cp"); // CRTK name
+    StateTable.AddData(m_accel,       "accel_raw");
+    StateTable.AddData(m_gyro,        "gyro_raw");
+    StateTable.AddData(m_trigger,     "trigger");
+    StateTable.AddData(m_battery,     "battery");
+    StateTable.AddData(m_buttons,     "buttons");
 
     // Provided interface
-    Interface = AddInterfaceProvided("controller");
-    if (Interface) {
+    m_interface = AddInterfaceProvided("controller");
+    if (m_interface) {
         // CRTK-friendly command name
-        Interface->AddCommandReadState(*Table, m_measured_cp, "measured_cp");
+        m_interface->AddCommandReadState(StateTable, m_measured_cp, "measured_cp");
 
         // Extra reads (handy in Qt and for debugging)
-        Interface->AddCommandReadState(*Table, m_accel,       "GetAccelerometer");
-        Interface->AddCommandReadState(*Table, m_gyro,        "GetGyroscope");
-        Interface->AddCommandReadState(*Table, m_trigger,     "GetTrigger");
-        Interface->AddCommandReadState(*Table, m_battery,     "GetBattery");
-        Interface->AddCommandReadState(*Table, m_buttons,     "GetButtons");
+        m_interface->AddCommandReadState(StateTable, m_accel,       "get_accelerometer");
+        m_interface->AddCommandReadState(StateTable, m_gyro,        "get_gyroscope");
+        m_interface->AddCommandReadState(StateTable, m_trigger,     "get_trigger");
+        m_interface->AddCommandReadState(StateTable, m_battery,     "get_battery");
+        m_interface->AddCommandReadState(StateTable, m_buttons,     "get_buttons");
 
-        // Period stats like in OptoForce
-        Interface->AddCommandReadState(*Table, Table->Period,       "GetTaskPeriod");
-        Interface->AddCommandReadState(*Table, Table->PeriodStats,  "get_period_statistics");
+        // Period stats
+        m_interface->AddCommandReadState(StateTable, StateTable.PeriodStats,  "get_period_statistics");
 
         // Write commands
-        Interface->AddCommandWrite(&mtsPSMove::SetLED, this, "SetLED");
-        Interface->AddCommandWrite(&mtsPSMove::SetRumble, this, "SetRumble");
-        Interface->AddCommandVoid(&mtsPSMove::ResetOrientation, this, "ResetOrientation");
+        m_interface->AddCommandWrite(&mtsPSMove::set_LED, this, "set_LED");
+        m_interface->AddCommandWrite(&mtsPSMove::set_rumble, this, "set_rumble");
+        m_interface->AddCommandVoid(&mtsPSMove::reset_orientation, this, "reset_orientation");
     }
 }
 
-mtsPSMove::mtsPSMove(const std::string & componentName,
-                     const std::string & connectionHint)
-: mtsPSMove(componentName) // delegate
-{
-    Configure(connectionHint);
-}
 
 mtsPSMove::~mtsPSMove()
 {
-    if (Move) {
-        psmove_set_rumble(Move, 0);
-        psmove_set_leds(Move, 0, 0, 0);
-        psmove_update_leds(Move);
-        psmove_disconnect(Move);
-        Move = nullptr;
+    if (m_move_handle) {
+        psmove_set_rumble(m_move_handle, 0);
+        psmove_set_leds(m_move_handle, 0, 0, 0);
+        psmove_update_leds(m_move_handle);
+        psmove_disconnect(m_move_handle);
+        m_move_handle = nullptr;
     }
 }
+
 
 void mtsPSMove::Configure(const std::string &args)
 {
@@ -85,15 +91,16 @@ void mtsPSMove::Configure(const std::string &args)
     if (args.empty()) { return; }
     auto pos = args.find("id:");
     if (pos != std::string::npos) {
-        ControllerIndex = std::atoi(args.c_str() + pos + 3);
+        m_controller_index = std::atoi(args.c_str() + pos + 3);
     } else {
         // numeric? then treat as index
         bool numeric = !args.empty() && std::strspn(args.c_str(), "0123456789") == args.size();
         if (numeric) {
-            ControllerIndex = std::atoi(args.c_str());
+            m_controller_index = std::atoi(args.c_str());
         }
     }
 }
+
 
 void mtsPSMove::Startup(void)
 {
@@ -102,69 +109,66 @@ void mtsPSMove::Startup(void)
         CMN_LOG_CLASS_INIT_ERROR << "No PS Move controllers found" << std::endl;
         return;
     }
-    if (ControllerIndex < 0 || ControllerIndex >= count) {
-        CMN_LOG_CLASS_INIT_WARNING << "Controller index " << ControllerIndex
+    if (m_controller_index < 0 || m_controller_index >= count) {
+        CMN_LOG_CLASS_INIT_WARNING << "Controller index " << m_controller_index
                                    << " out of range [0.." << (count-1) << "], using 0" << std::endl;
-        ControllerIndex = 0;
+        m_controller_index = 0;
     }
 
-    Move = psmove_connect_by_id(ControllerIndex);
-    if (!Move) {
-        CMN_LOG_CLASS_INIT_ERROR << "Failed to connect to PS Move " << ControllerIndex << std::endl;
+    m_move_handle = psmove_connect_by_id(m_controller_index);
+    if (!m_move_handle) {
+        CMN_LOG_CLASS_INIT_ERROR << "Failed to connect to PS Move " << m_controller_index << std::endl;
         return;
     }
 
-    psmove_set_rate_limiting(Move, 1);
+    psmove_set_rate_limiting(m_move_handle, 1);
 
-    if (psmove_has_calibration(Move)) {
-        psmove_enable_orientation(Move, 1);
-        OrientationAvailable = (psmove_has_orientation(Move) != 0);
+    if (psmove_has_calibration(m_move_handle)) {
+        psmove_enable_orientation(m_move_handle, 1);
+        m_orientation_available = (psmove_has_orientation(m_move_handle) != 0);
     } else {
-        OrientationAvailable = false;
+        m_orientation_available = false;
         CMN_LOG_CLASS_INIT_WARNING << "No magnetometer calibration; orientation may be unavailable." << std::endl;
     }
 
     // default dim cyan
-    psmove_set_leds(Move, 0, 32, 32);
-    psmove_update_leds(Move);
+    psmove_set_leds(m_move_handle, 0, 32, 32);
+    psmove_update_leds(m_move_handle);
 }
+
 
 void mtsPSMove::Run(void)
 {
     ProcessQueuedCommands();
 
-    if (!Move) {
+    if (!m_move_handle) {
         m_measured_cp.SetValid(false);
         osaSleep(0.005); // don’t spin
         return;
     }
 
     // poll all pending samples
-    while (psmove_poll(Move)) {
-        UpdateFromController();
+    while (psmove_poll(m_move_handle)) {
+        update_data();
     }
-
-    // Timestamp from cisst time server
-    m_measured_cp.SetTimestamp(mtsManagerLocal::GetInstance()->GetTimeServer().GetRelativeTime());
-    Table->Advance();
-
-    ProcessQueuedEvents();
 }
+
 
 void mtsPSMove::Cleanup(void)
 {
     // handled in destructor
 }
 
-void mtsPSMove::UpdateFromController()
+
+void mtsPSMove::update_data(void)
 {
     // Buttons & trigger
-    m_buttons = psmove_get_buttons(Move);
-    uint8_t trig = psmove_get_trigger(Move);
+    m_buttons = psmove_get_buttons(m_move_handle);
+    uint8_t trig = psmove_get_trigger(m_move_handle);
     m_trigger = static_cast<double>(trig) / 255.0;
 
     // Battery
-    PSMove_Battery_Level b = psmove_get_battery(Move);
+    PSMove_Battery_Level b = psmove_get_battery(m_move_handle);
     switch (b) {
         case Batt_MIN:       m_battery = 0.05; break;
         case Batt_20Percent: m_battery = 0.20; break;
@@ -178,18 +182,18 @@ void mtsPSMove::UpdateFromController()
 
     // Raw IMU
     float ax, ay, az, gx, gy, gz;
-    psmove_get_accelerometer_frame(Move, Frame_SecondHalf, &ax, &ay, &az);
-    psmove_get_gyroscope_frame(Move, Frame_SecondHalf, &gx, &gy, &gz);
+    psmove_get_accelerometer_frame(m_move_handle, Frame_SecondHalf, &ax, &ay, &az);
+    psmove_get_gyroscope_frame(m_move_handle, Frame_SecondHalf, &gx, &gy, &gz);
     m_accel.Assign(ax, ay, az);
     m_gyro.Assign(gx, gy, gz);
 
     // Orientation → rotation matrix
-    vctMatRot3 R; R.Identity();
-    if (OrientationAvailable) {
+    vctMatRot3 R;
+    if (m_orientation_available) {
         float qw = 1.0f, qx = 0.0f, qy = 0.0f, qz = 0.0f;
         // NOTE: In this API variant, psmove_get_orientation returns void.
         //       We just call it and then sanity-check the result.
-        psmove_get_orientation(Move, &qw, &qx, &qy, &qz);
+        psmove_get_orientation(m_move_handle, &qw, &qx, &qy, &qz);
 
         const bool ok =
             std::isfinite(qw) && std::isfinite(qx) &&
@@ -197,7 +201,7 @@ void mtsPSMove::UpdateFromController()
             (qw*qw + qx*qx + qy*qy + qz*qz) > 1e-12;
 
         if (ok) {
-            QuaternionToRotation(qw, qx, qy, qz, R);
+            m_measured_cp.Position().Rotation().FromNormalized(vctQuaternionRotation3(qw, qx, qy, qz));
             m_measured_cp.SetValid(true);
         } else {
             m_measured_cp.SetValid(false);
@@ -207,52 +211,32 @@ void mtsPSMove::UpdateFromController()
     }
 
     // Translation unknown without camera tracker; keep zero
-    vct3 t(0.0);
-    m_measured_cp.SetPosition(vctFrm3(R, t));
+    m_measured_cp.Position().Translation() = vct3(0.0);
 }
 
-void mtsPSMove::QuaternionToRotation(double w, double x, double y, double z, vctMatRot3 &R) const
+
+void mtsPSMove::set_LED(const vctDouble3 &rgb)
 {
-    const double n = std::sqrt(w*w + x*x + y*y + z*z);
-    if (n > 1e-12) { w/=n; x/=n; y/=n; z/=n; }
-
-    const double xx = x*x, yy = y*y, zz = z*z;
-    const double xy = x*y, xz = x*z, yz = y*z;
-    const double wx = w*x, wy = w*y, wz = w*z;
-
-    R.Element(0,0) = 1.0 - 2.0*(yy + zz);
-    R.Element(0,1) = 2.0*(xy - wz);
-    R.Element(0,2) = 2.0*(xz + wy);
-
-    R.Element(1,0) = 2.0*(xy + wz);
-    R.Element(1,1) = 1.0 - 2.0*(xx + zz);
-    R.Element(1,2) = 2.0*(yz - wx);
-
-    R.Element(2,0) = 2.0*(xz - wy);
-    R.Element(2,1) = 2.0*(yz + wx);
-    R.Element(2,2) = 1.0 - 2.0*(xx + yy);
+    if (!m_move_handle) return;
+    const uint8_t r = static_cast<uint8_t>(std::clamp(rgb[0], 0.0, 1.0) * 255.0);
+    const uint8_t g = static_cast<uint8_t>(std::clamp(rgb[1], 0.0, 1.0) * 255.0);
+    const uint8_t b = static_cast<uint8_t>(std::clamp(rgb[2], 0.0, 1.0) * 255.0);
+    psmove_set_leds(m_move_handle, r, g, b);
+    psmove_update_leds(m_move_handle);
 }
 
-void mtsPSMove::SetLED(const vctDouble3 &rgb)
+
+void mtsPSMove::set_rumble(const double & strength)
 {
-    if (!Move) return;
-    const uint8_t r = static_cast<uint8_t>(Clamp01(rgb[0]) * 255.0);
-    const uint8_t g = static_cast<uint8_t>(Clamp01(rgb[1]) * 255.0);
-    const uint8_t b = static_cast<uint8_t>(Clamp01(rgb[2]) * 255.0);
-    psmove_set_leds(Move, r, g, b);
-    psmove_update_leds(Move);
+    if (!m_move_handle) return;
+    const uint8_t s = static_cast<uint8_t>(std::clamp(strength, 0.0, 1.0) * 255.0);
+    psmove_set_rumble(m_move_handle, s);
+    psmove_update_leds(m_move_handle);
 }
 
-void mtsPSMove::SetRumble(const double & strength)
-{
-    if (!Move) return;
-    const uint8_t s = static_cast<uint8_t>(Clamp01(strength) * 255.0);
-    psmove_set_rumble(Move, s);
-    psmove_update_leds(Move);
-}
 
-void mtsPSMove::ResetOrientation(void)
+void mtsPSMove::reset_orientation(void)
 {
-    if (!Move) return;
-    psmove_reset_orientation(Move);
+    if (!m_move_handle) return;
+    psmove_reset_orientation(m_move_handle);
 }
