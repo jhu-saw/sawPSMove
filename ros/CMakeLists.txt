@@ -10,7 +10,7 @@
 # --- end cisst license ---
 
 cmake_minimum_required(VERSION 3.10)
-project (psmove_ros VERSION 1.1.0)
+project (psmove_ros VERSION 0.1.0)
 
 # first test for ROS1
 set (ROS1_depends cisst_ros_crtk roscpp roslib)
@@ -101,3 +101,19 @@ if (cisst_FOUND_AS_REQUIRED)
   endif (sawPSMove_FOUND)
 
 endif (cisst_FOUND_AS_REQUIRED)
+
+# cmake_minimum_required(VERSION 3.10)
+# project (sawPSMove VERSION 0.1.0)
+
+# find_package (cisst REQUIRED)
+# include (${CISST_USE_FILE})
+# cisst_cpack_settings (
+#   VENDOR "JHU"
+#   MAINTAINER "anton.deguet@jhu.edu")
+
+# add_subdirectory (components)
+
+# set (sawPSMove_DIR "${sawPSMove_BINARY_DIR}/components")
+
+# include (CPack)
+# cpack_add_component (sawPSMove)

@@ -5,5 +5,11 @@
   <description>cisst/SAW component for PlayStation Move controller</description>
   <maintainer email="you@example.com">You</maintainer>
   <license>BSD-3-Clause</license>
+  <build_depend>cisst</build_depend>
+  <run_depend>cisst</run_depend>
+
+  <export>
+    <build_type>catkin</build_type>
+  </export>
   <author email="you@example.com">You</author>
 </package>

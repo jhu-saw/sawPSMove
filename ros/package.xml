@@ -28,7 +28,7 @@
   <depend condition="$ROS_VERSION == 2">cisst_msgs</depend>
   <depend condition="$ROS_VERSION == 2">crtk_msgs</depend>
   <depend condition="$ROS_VERSION == 2">cisst_ros_bridge</depend>
-  <depend condition="$ROS_VERSION == 2">cisst_ros_crtk</depend>
+  <depend condition="$ROS_VERSION == 2">cisst_ros2_crtk</depend>
 
   <export>
     <build_type condition="$ROS_VERSION == 2">ament_cmake</build_type>
