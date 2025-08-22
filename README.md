@@ -25,12 +25,51 @@ You will first need to download, compile and install the
 https://github.com/thp/psmoveap.  Then configure the build with
 `ccmake` or `cmake-gui` , set the build type to `Release` and the
 install prefix to `/usr/local`.  Build with `make` and install with
-`sudo make install`.  The *psmoveapi* headers, libraries and
+`sudo make install`.  
+
+```bash
+git clone https://github.com/thp/psmoveapi.git
+cd psmoveapi
+mkdir build
+cd build
+```
+
+```bash
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
+```
+
+```bash
+make -j$(nproc)
+```
+
+```bash
+sudo make install
+```
+
+The *psmoveapi* headers, libraries and
 executables will be install under `/usr/local`.
+
 
 You might need to change your BlueTooth configuration, see
 https://psmoveapi.readthedocs.io/en/latest/pairing.html (summary, edit
 `/etc/bluetooth/input.conf` to set `ClassicBondedOnly=false`).
+
+## Verify Installation
+
+   * Headers:
+
+     ```bash
+     ls /usr/local/include/psmoveapi/
+     ```
+
+     Expected output: `psmove.h  psmove_config.h  psmove_tracker.h ...`
+
+   * Executables:
+
+     ```bash
+     which psmove
+     ```
+     Expected output: `/usr/local/bin/psmove`
 
 To pair the controllers, since `psmove` should be installed in
 `/usr/local/bin`, you can type `psmove pair` and `psmove register`.
