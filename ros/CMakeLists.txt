@@ -10,7 +10,7 @@
 # --- end cisst license ---
 
 cmake_minimum_required(VERSION 3.10)
-project (psmove VERSION 0.1.0)
+project (ps_move VERSION 0.1.0)
 
 # first test for ROS1
 set (ROS1_depends cisst_ros_crtk roscpp roslib)
@@ -76,13 +76,13 @@ if (cisst_FOUND_AS_REQUIRED)
 
     link_directories (${sawPSMove_LIBRARY_DIR})
 
-    add_executable (psmove src/psmove.cpp)
-    target_link_libraries (psmove
+    add_executable (ps_move src/psmove.cpp)
+    target_link_libraries (ps_move
       ${sawPSMove_LIBRARIES}
       ${catkin_LIBRARIES})
-    cisst_target_link_libraries (psmove ${REQUIRED_CISST_LIBRARIES})
+    cisst_target_link_libraries (ps_move ${REQUIRED_CISST_LIBRARIES})
 
-    install (TARGETS psmove
+    install (TARGETS ps_move
       LIBRARY DESTINATION lib/${PROJECT_NAME}
       RUNTIME DESTINATION lib/${PROJECT_NAME}
       LIBRARY DESTINATION lib
@@ -90,7 +90,7 @@ if (cisst_FOUND_AS_REQUIRED)
 
     if (ROS_VERSION EQUAL 2)
       ament_target_dependencies (
-        psmove
+        ps_move
         ${ROS2_depends}
         )
       ament_package ()
