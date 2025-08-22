@@ -103,8 +103,8 @@ For ROS 2, run:
 ros2 run psmove psmove
 ```
 
-## Other "middleware"
+<!-- ## Other "middleware"
 
 Besides ROS, the ForceDimension component can also stream data to your application using the *sawOpenIGTLink* or *sawSocketStreamer* components.  See:
 * [sawOpenIGTLink](https://github.com/jhu-saw/sawOpenIGTLink)
-* [sawSocketStreamer](https://github.com/jhu-saw/sawSocketStreamer)
+* [sawSocketStreamer](https://github.com/jhu-saw/sawSocketStreamer) -->
