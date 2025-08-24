@@ -31,10 +31,17 @@ extern "C" {
 #include <psmoveapi/psmove.h>
 }
 
-CMN_IMPLEMENT_SERVICES(mtsPSMove)
+CMN_IMPLEMENT_SERVICES(mtsPSMove);
 
-mtsPSMove::mtsPSMove(const std::string & componentName)
-: mtsTaskContinuous(componentName)
+
+mtsPSMove::mtsPSMove(const std::string & component_name, const double & period_in_seconds):
+    mtsTaskPeriodic(component_name, period_in_seconds)
+{
+    initialize();
+}
+
+
+void mtsPSMove::initialize(void)
 {
     m_measured_cp.SetValid(false);
     m_measured_cp.SetMovingFrame("psmove");

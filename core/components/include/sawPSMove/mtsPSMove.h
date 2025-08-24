@@ -21,7 +21,7 @@ http://www.cisst.org/cisst/license.txt.
 #ifndef _mtsPSMove_h
 #define _mtsPSMove_h
 
-#include <cisstMultiTask/mtsTaskContinuous.h>
+#include <cisstMultiTask/mtsTaskPeriodic.h>
 #include <cisstParameterTypes/prmPositionCartesianGet.h>
 #include <cisstVector/vctFixedSizeVectorTypes.h>
 #include <cisstVector/vctMatrixRotation3.h>
@@ -33,13 +33,19 @@ http://www.cisst.org/cisst/license.txt.
 struct _PSMove;
 typedef struct _PSMove PSMove;
 
-class CISST_EXPORT mtsPSMove: public mtsTaskContinuous
+class CISST_EXPORT mtsPSMove: public mtsTaskPeriodic
 {
-    CMN_DECLARE_SERVICES(CMN_NO_DYNAMIC_CREATION, CMN_LOG_ALLOW_DEFAULT);
+    CMN_DECLARE_SERVICES(CMN_DYNAMIC_CREATION_ONEARG, CMN_LOG_ALLOW_DEFAULT);
 
 public:
     // Default: discover controller 0
-    explicit mtsPSMove(const std::string & componentName);
+    explicit mtsPSMove(const std::string & componentName, const double & period_in_seconds = 0.03);
+
+    inline mtsPSMove(const mtsTaskPeriodicConstructorArg & arg):
+        mtsTaskPeriodic(arg) {
+        initialize();
+    }
+
     // Select controller by numeric/string hint (e.g. "id:1" or "1")
     mtsPSMove(const std::string & componentName, const std::string & connectionHint);
 
@@ -57,6 +63,9 @@ public:
     void reset_orientation(void);
 
 protected:
+
+    void initialize(void);
+
     // PSMove handle
     PSMove * m_move_handle = nullptr;
     int m_controller_index = 0;
