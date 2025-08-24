@@ -22,10 +22,10 @@ http://www.cisst.org/cisst/license.txt.
 #define _mtsPSMove_h
 
 #include <cisstMultiTask/mtsTaskPeriodic.h>
-#include <cisstParameterTypes/prmPositionCartesianGet.h>
 #include <cisstVector/vctFixedSizeVectorTypes.h>
-#include <cisstVector/vctMatrixRotation3.h>
-#include <cisstVector/vctFrame4x4.h>
+#include <cisstParameterTypes/prmPositionCartesianGet.h>
+#include <cisstParameterTypes/prmStateJoint.h>
+#include <cisstParameterTypes/prmEventButton.h>
 
 #include <sawPSMove/sawPSMoveExport.h>
 
@@ -39,7 +39,7 @@ class CISST_EXPORT mtsPSMove: public mtsTaskPeriodic
 
 public:
     // Default: discover controller 0
-    explicit mtsPSMove(const std::string & componentName, const double & period_in_seconds = 0.03);
+    explicit mtsPSMove(const std::string & component_name, const double & period_in_seconds = 0.03);
 
     inline mtsPSMove(const mtsTaskPeriodicConstructorArg & arg):
         mtsTaskPeriodic(arg) {
@@ -59,12 +59,14 @@ public:
 
     // Utility commands
     void set_LED(const vctDouble3 &rgb);    // 0..1
-    void set_rumble(const double & strength); // 0..1
+    void rumble(const double & strength); // 0..1
     void reset_orientation(void);
 
 protected:
 
+    // Internals
     void initialize(void);
+    void update_data(void);
 
     // PSMove handle
     PSMove * m_move_handle = nullptr;
@@ -73,17 +75,33 @@ protected:
 
     // State
     prmPositionCartesianGet m_measured_cp;    // Pose
+    prmStateJoint m_gripper_measured_js;
     vctDouble3 m_accel;                       // accel raw
     vctDouble3 m_gyro;                        // gyro raw
     unsigned int m_buttons{0};                // button mask
     double m_trigger{0.0};                    // 0..1
     int m_battery{0};                         // 0..100, 99 for charging (approx)
 
+    // Buttons
+    bool m_square_value = false;
+    mtsFunctionWrite m_square_event;
+    bool m_triangle_value = false;
+    mtsFunctionWrite m_triangle_event;
+    bool m_circle_value = false;
+    mtsFunctionWrite m_circle_event;
+    bool m_cross_value = false;
+    mtsFunctionWrite m_cross_event;
+    bool m_move_value = false;
+    mtsFunctionWrite m_move_event;
+
     // Provided interface
     mtsInterfaceProvided * m_interface = nullptr;
 
-    // Internals
-    void update_data(void);
+    struct {
+        prmEventButton pressed;
+        prmEventButton released;
+    } m_event_payloads;
+
 };
 
 CMN_DECLARE_SERVICES_INSTANTIATION(mtsPSMove);

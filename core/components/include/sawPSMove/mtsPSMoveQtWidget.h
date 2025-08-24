@@ -66,10 +66,10 @@ private:
         mtsFunctionRead period_statistics;
         mtsFunctionRead measured_cp;
         mtsFunctionRead get_buttons;
-        mtsFunctionRead get_trigger;
-        mtsFunctionRead get_battery;
+        mtsFunctionRead trigger;
+        mtsFunctionRead battery;
         mtsFunctionWrite set_LED;
-        mtsFunctionWrite set_rumble;
+        mtsFunctionWrite rumble;
         mtsFunctionVoid  reset_orientation;
 	} device;
 

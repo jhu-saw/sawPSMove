@@ -47,10 +47,10 @@ mtsPSMoveQtWidget::mtsPSMoveQtWidget(const std::string &name, QWidget *parent):
         // QPOState->SetInterfaceRequired(m_device_interface);
         m_device_interface->AddFunction("measured_cp", device.measured_cp);
         m_device_interface->AddFunction("get_buttons", device.get_buttons);
-        m_device_interface->AddFunction("get_trigger", device.get_trigger);
-        m_device_interface->AddFunction("get_battery", device.get_battery);
+        m_device_interface->AddFunction("trigger", device.trigger);
+        m_device_interface->AddFunction("battery", device.battery);
         m_device_interface->AddFunction("set_LED", device.set_LED);
-        m_device_interface->AddFunction("set_rumble", device.set_rumble);
+        m_device_interface->AddFunction("rumble", device.rumble);
         m_device_interface->AddFunction("reset_orientation", device.reset_orientation);
         m_device_interface->AddFunction("period_statistics", device.period_statistics);
     }
@@ -130,11 +130,11 @@ void mtsPSMoveQtWidget::OnTimer()
         Buttons->setText(QString("buttons=0x%1").arg(QString::number(btn, 16).rightJustified(8, '0')));
     }
     double trig = 0.0;
-    if (device.get_trigger(trig).IsOK()) {
+    if (device.trigger(trig).IsOK()) {
         Trigger->setText(QString("trigger=%1").arg(trig, 0, 'f', 2));
     }
     int bat = 0.0;
-    if (device.get_battery(bat).IsOK()) {
+    if (device.battery(bat).IsOK()) {
         Battery->setText(QString("battery=%1").arg(bat));
     }
 
@@ -154,7 +154,7 @@ void mtsPSMoveQtWidget::OnSetLED()
 
 void mtsPSMoveQtWidget::OnRumbleChanged(double v)
 {
-    device.set_rumble(v);
+    device.rumble(v);
 }
 
 
