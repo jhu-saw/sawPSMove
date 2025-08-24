@@ -77,7 +77,7 @@ protected:
     vctDouble3 m_gyro;                        // gyro raw
     unsigned int m_buttons{0};                // button mask
     double m_trigger{0.0};                    // 0..1
-    double m_battery{0.0};                    // 0..1 (approx)
+    int m_battery{0};                         // 0..100, 99 for charging (approx)
 
     // Provided interface
     mtsInterfaceProvided * m_interface = nullptr;

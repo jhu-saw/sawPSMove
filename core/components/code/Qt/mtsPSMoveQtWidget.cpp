@@ -133,9 +133,9 @@ void mtsPSMoveQtWidget::OnTimer()
     if (device.get_trigger(trig).IsOK()) {
         Trigger->setText(QString("trigger=%1").arg(trig, 0, 'f', 2));
     }
-    double bat = 0.0;
+    int bat = 0.0;
     if (device.get_battery(bat).IsOK()) {
-        Battery->setText(QString("battery=%1").arg(bat, 0, 'f', 2));
+        Battery->setText(QString("battery=%1").arg(bat));
     }
 
     mtsIntervalStatistics _stats;

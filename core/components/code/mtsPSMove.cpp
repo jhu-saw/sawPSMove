@@ -181,17 +181,26 @@ void mtsPSMove::update_data(void)
 
     // Battery
     PSMove_Battery_Level b = psmove_get_battery(m_move_handle);
+    int _new_battery;
     switch (b) {
-        case Batt_MIN:       m_battery = 0.05; break;
-        case Batt_20Percent: m_battery = 0.20; break;
-        case Batt_40Percent: m_battery = 0.40; break;
-        case Batt_60Percent: m_battery = 0.60; break;
-        case Batt_80Percent: m_battery = 0.80; break;
-        case Batt_MAX:
-        case Batt_CHARGING:  m_battery = 1.00; break;
-        default:             m_battery = 0.0;  break;
+        case Batt_MIN:       _new_battery = 5; break;
+        case Batt_20Percent: _new_battery = 20; break;
+        case Batt_40Percent: _new_battery = 40; break;
+        case Batt_60Percent: _new_battery = 60; break;
+        case Batt_80Percent: _new_battery = 80; break;
+        case Batt_MAX:       _new_battery = 100; break;
+        case Batt_CHARGING:  _new_battery = 99; break;
+        default:             _new_battery = 0;  break;
     }
-
+    if (_new_battery != m_battery) {
+        if (_new_battery == 99) {
+            m_interface->SendStatus("Battery is charging");
+        } else {
+            m_interface->SendStatus("Battery level is " + std::to_string(_new_battery) + "%");
+        }
+    }
+    m_battery = _new_battery;
+    
     // Raw IMU
     float ax, ay, az, gx, gy, gz;
     psmove_get_accelerometer_frame(m_move_handle, Frame_SecondHalf, &ax, &ay, &az);
