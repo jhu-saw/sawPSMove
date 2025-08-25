@@ -31,7 +31,10 @@ extern "C" {
 #include <psmoveapi/psmove.h>
 }
 
-CMN_IMPLEMENT_SERVICES(mtsPSMove);
+
+CMN_IMPLEMENT_SERVICES_DERIVED_ONEARG(mtsPSMove,
+                                      mtsTaskPeriodic,
+                                      mtsTaskPeriodicConstructorArg);
 
 
 mtsPSMove::mtsPSMove(const std::string & component_name, const double & period_in_seconds):
@@ -43,6 +46,9 @@ mtsPSMove::mtsPSMove(const std::string & component_name, const double & period_i
 
 void mtsPSMove::initialize(void)
 {
+    m_operating_state.SetValid(true);
+    m_operating_state.SetState(prmOperatingState::DISABLED);
+
     m_measured_cp.SetValid(false);
     m_measured_cp.SetMovingFrame("psmove");
     m_measured_cp.SetReferenceFrame("world");
@@ -60,6 +66,7 @@ void mtsPSMove::initialize(void)
     m_event_payloads.released.SetValid(true);
 
     // State table entries
+    StateTable.AddData(m_operating_state, "operating_state");
     StateTable.AddData(m_measured_cp, "measured_cp"); // CRTK name
     StateTable.AddData(m_gripper_measured_js, "gripper_measured_js"); // CRTK name
     StateTable.AddData(m_accel,       "accel_raw");
@@ -76,18 +83,22 @@ void mtsPSMove::initialize(void)
         m_interface->AddMessageEvents();
 
         // CRTK-friendly command name
+        m_interface->AddCommandReadState(StateTable, m_operating_state, "operating_state");
+        m_interface->AddEventWrite(m_operating_state_event, "operating_state", prmOperatingState());
+        m_interface->AddCommandWrite(&mtsPSMove::state_command,
+                                     this, "state_command", std::string(""));
+
+        m_interface->AddCommandReadState(StateTable, StateTable.PeriodStats,  "period_statistics");
+
         m_interface->AddCommandReadState(StateTable, m_measured_cp, "measured_cp");
         m_interface->AddCommandReadState(StateTable, m_gripper_measured_js, "gripper/measured_js");
 
         // Extra reads (handy in Qt and for debugging)
-        m_interface->AddCommandReadState(StateTable, m_accel,       "get_accelerometer");
-        m_interface->AddCommandReadState(StateTable, m_gyro,        "get_gyroscope");
-        m_interface->AddCommandReadState(StateTable, m_trigger,     "trigger");
-        m_interface->AddCommandReadState(StateTable, m_battery,     "battery");
-        m_interface->AddCommandReadState(StateTable, m_buttons,     "get_buttons");
-
-        // Period stats
-        m_interface->AddCommandReadState(StateTable, StateTable.PeriodStats,  "period_statistics");
+        m_interface->AddCommandReadState(StateTable, m_accel,   "get_accelerometer");
+        m_interface->AddCommandReadState(StateTable, m_gyro,    "get_gyroscope");
+        m_interface->AddCommandReadState(StateTable, m_trigger, "trigger");
+        m_interface->AddCommandReadState(StateTable, m_battery, "battery");
+        m_interface->AddCommandReadState(StateTable, m_buttons, "get_buttons");
 
         // Write commands
         m_interface->AddCommandWrite(&mtsPSMove::set_LED, this, "set_LED");
@@ -183,6 +194,11 @@ void mtsPSMove::Startup(void)
     // default dim cyan
     psmove_set_leds(m_move_handle, 0, 32, 32);
     psmove_update_leds(m_move_handle);
+
+    // dummy state, should use state of PS controller
+    m_operating_state.SetState(prmOperatingState::ENABLED);
+    m_operating_state.SetIsHomed(true);
+    m_operating_state_event(m_operating_state);
 }
 
 
@@ -207,6 +223,36 @@ void mtsPSMove::Run(void)
 void mtsPSMove::Cleanup(void)
 {
     // handled in destructor
+}
+
+
+void mtsPSMove::state_command(const std::string & command)
+{
+    std::string humanReadableMessage;
+    prmOperatingState::StateType newOperatingState;
+    try {
+        if (m_operating_state.ValidCommand(prmOperatingState::CommandTypeFromString(command),
+                                           newOperatingState, humanReadableMessage)) {
+            if (command == "enable") {
+                if (m_move_handle) {
+                    m_operating_state.SetState(prmOperatingState::ENABLED);
+                }
+            } else if (command == "disable") {
+            } else if (command == "home") {
+                m_operating_state.SetIsHomed(true);
+            } else if (command == "unhome") {
+                m_operating_state.SetIsHomed(false);
+            } else if (command == "pause") {
+            } else if (command == "resume") {
+                return;
+            }
+        } else {
+            m_interface->SendWarning(this->GetName() + ": " + humanReadableMessage);
+        }
+    } catch (std::runtime_error & e) {
+        m_interface->SendWarning(this->GetName() + ": " + command + " doesn't seem to be a valid state_command (" + e.what() + ")");
+    }
+    m_operating_state_event(m_operating_state);
 }
 
 

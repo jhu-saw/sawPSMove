@@ -38,13 +38,13 @@ mtsPSMoveQtWidget::mtsPSMoveQtWidget(const std::string &name, QWidget *parent):
     mtsComponent(name)
 {
     QMMessage = new mtsMessageQtWidget();
-    // QPOState = new prmOperatingStateQtWidget();
+    QPOState = new prmOperatingStateQtWidget();
 
     // Required interface to the device (OptoForce pattern)
     m_device_interface = AddInterfaceRequired("device");
     if (m_device_interface) {
         QMMessage->SetInterfaceRequired(m_device_interface);
-        // QPOState->SetInterfaceRequired(m_device_interface);
+        QPOState->SetInterfaceRequired(m_device_interface);
         m_device_interface->AddFunction("measured_cp", device.measured_cp);
         m_device_interface->AddFunction("get_buttons", device.get_buttons);
         m_device_interface->AddFunction("trigger", device.trigger);
@@ -89,6 +89,9 @@ mtsPSMoveQtWidget::mtsPSMoveQtWidget(const std::string &name, QWidget *parent):
 
     QMIntervalStatistics = new mtsIntervalStatisticsQtWidget();
     layout->addWidget(QMIntervalStatistics, row++, 0, 1, 2);
+
+    QPOState->setupUi();
+    layout->addWidget(QPOState, row++, 0, 1, 2);
 
     QMMessage->setupUi();
     layout->addWidget(QMMessage, row++, 0, 1, 2);

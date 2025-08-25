@@ -35,6 +35,7 @@ class QPushButton;
 class mtsIntervalStatisticsQtWidget;
 class mtsMessageQtWidget;
 class prmPositionCartesianGetQtWidget;
+class prmOperatingStateQtWidget;
 
 // Always include last
 #include <sawPSMove/sawPSMoveQtExport.h>
@@ -86,6 +87,7 @@ private:
     QPushButton *ResetOri{nullptr};
 
     mtsIntervalStatisticsQtWidget * QMIntervalStatistics = nullptr;
+    prmOperatingStateQtWidget * QPOState = nullptr;
     mtsMessageQtWidget * QMMessage = nullptr;
     prmPositionCartesianGetQtWidget * QPCGWidget = nullptr;
 

@@ -53,9 +53,11 @@ if (cisst_FOUND_AS_REQUIRED)
                ${sawPSMove_HEADER_DIR}/mtsPSMove.h
                ${sawPSMove_BINARY_DIR}/include/sawPSMove/sawPSMoveRevision.h)
 
-   set_target_properties (sawPSMove PROPERTIES
-                          VERSION ${sawPSMove_VERSION}
-                          FOLDER "sawPSMove")
+  set_target_properties (sawPSMove PROPERTIES
+                         VERSION ${sawPSMove_VERSION}
+                         FOLDER "sawPSMove")
+
+  target_link_libraries (sawPSMove psmoveapi)
 
   cisst_target_link_libraries (sawPSMove ${REQUIRED_CISST_LIBRARIES})
 

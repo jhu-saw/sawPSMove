@@ -23,6 +23,7 @@ http://www.cisst.org/cisst/license.txt.
 
 #include <cisstMultiTask/mtsTaskPeriodic.h>
 #include <cisstVector/vctFixedSizeVectorTypes.h>
+#include <cisstParameterTypes/prmOperatingState.h>
 #include <cisstParameterTypes/prmPositionCartesianGet.h>
 #include <cisstParameterTypes/prmStateJoint.h>
 #include <cisstParameterTypes/prmEventButton.h>
@@ -57,16 +58,17 @@ public:
     void Run(void) override;
     void Cleanup(void) override;
 
+protected:
+
     // Utility commands
     void set_LED(const vctDouble3 &rgb);    // 0..1
     void rumble(const double & strength); // 0..1
     void reset_orientation(void);
 
-protected:
-
     // Internals
     void initialize(void);
     void update_data(void);
+    void state_command(const std::string & command);
 
     // PSMove handle
     PSMove * m_move_handle = nullptr;
@@ -74,6 +76,7 @@ protected:
     bool m_orientation_available = false;
 
     // State
+    prmOperatingState m_operating_state;
     prmPositionCartesianGet m_measured_cp;    // Pose
     prmStateJoint m_gripper_measured_js;
     vctDouble3 m_accel;                       // accel raw
@@ -81,6 +84,8 @@ protected:
     unsigned int m_buttons{0};                // button mask
     double m_trigger{0.0};                    // 0..1
     int m_battery{0};                         // 0..100, 99 for charging (approx)
+
+    mtsFunctionWrite m_operating_state_event;
 
     // Buttons
     bool m_square_value = false;
