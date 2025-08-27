@@ -19,6 +19,7 @@ http://www.cisst.org/cisst/license.txt.
 #include <sawPSMove/mtsPSMove.h>
 
 #include <cisstOSAbstraction/osaSleep.h>
+#include <cisstOSAbstraction/osaGetTime.h>
 #include <cisstMultiTask/mtsInterfaceProvided.h>
 #include <cisstMultiTask/mtsManagerLocal.h>
 #include <cisstCommon/cmnLogger.h>
@@ -36,6 +37,17 @@ extern "C" {
 CMN_IMPLEMENT_SERVICES_DERIVED_ONEARG(mtsPSMove,
                                       mtsTaskPeriodic,
                                       mtsTaskPeriodicConstructorArg);
+
+static const char* cam_status_str(mtsPSMove::CameraStatus s) {
+    switch (s) {
+        case mtsPSMove::CameraStatus::Disabled:    return "Disabled";
+        case mtsPSMove::CameraStatus::Starting:    return "Starting";
+        case mtsPSMove::CameraStatus::Calibrating: return "Calibrating";
+        case mtsPSMove::CameraStatus::Ready:       return "Ready";
+        case mtsPSMove::CameraStatus::Error:       return "Error";
+    }
+    return "Unknown";
+}
 
 
 mtsPSMove::mtsPSMove(const std::string & component_name, const double & period_in_seconds):
@@ -83,7 +95,6 @@ void mtsPSMove::initialize(void)
     // Provided interface
     m_interface = AddInterfaceProvided(_controller_name);
     if (m_interface) {
-
         m_interface->AddMessageEvents();
 
         // CRTK-friendly command name
@@ -103,6 +114,7 @@ void mtsPSMove::initialize(void)
         m_interface->AddCommandReadState(StateTable, m_trigger, "trigger");
         m_interface->AddCommandReadState(StateTable, m_battery, "battery");
         m_interface->AddCommandReadState(StateTable, m_buttons, "get_buttons");
+        // m_interface->AddCommandReadState(StateTable, m_camera_status_str, "camera/status");
 
         // Write commands
         m_interface->AddCommandWrite(&mtsPSMove::set_LED, this, "set_LED");
@@ -139,6 +151,9 @@ void mtsPSMove::initialize(void)
     if (button_interface) {
         button_interface->AddEventWrite(m_move_event, "Button", prmEventButton());
     }
+
+    // Initial camera status
+    camera_set_status_(CameraStatus::Disabled);
 }
 
 
@@ -151,10 +166,7 @@ mtsPSMove::~mtsPSMove()
         psmove_disconnect(m_move_handle);
         m_move_handle = nullptr;
     }
-    if (m_tracker_handle) {
-        psmove_tracker_free(m_tracker_handle);
-        m_tracker_handle = nullptr;
-    }
+    camera_stop_();
 }
 
 
@@ -172,10 +184,10 @@ void mtsPSMove::Configure(const std::string &args)
             m_controller_index = std::atoi(args.c_str());
         }
     }
-    // TODO: Look at modifying example code to see how to enable camera
+    // TODO: Ignore this code for now. It is enabled by hardcoding m_camera_requested to true in the header.
     // Enable camera / tracking if requested
     // if (args.find("camera:1") != std::string::npos) {
-    //     m_camera_enabled = true;
+    //     m_camera_requested = true;
     // }
 }
 
@@ -199,7 +211,7 @@ void mtsPSMove::Startup(void)
         return;
     }
 
-    psmove_set_rate_limiting(m_move_handle, 1);
+    // psmove_set_rate_limiting(m_move_handle, 1);
 
     if (psmove_has_calibration(m_move_handle)) {
         psmove_enable_orientation(m_move_handle, 1);
@@ -209,7 +221,10 @@ void mtsPSMove::Startup(void)
         CMN_LOG_CLASS_INIT_WARNING << "No magnetometer calibration; orientation may be unavailable." << std::endl;
     }
 
-    m_interface->SendStatus("Testing"); // TODO: Might need to be removed.
+    m_interface->SendStatus("Testing"); 
+
+    // honor requested camera state
+    if (m_camera_requested) camera_start_if_needed_();
 
     // default dim cyan
     psmove_set_leds(m_move_handle, 0, 32, 32);
@@ -227,17 +242,9 @@ void mtsPSMove::Run(void)
 {
     ProcessQueuedCommands();
 
-    if (m_camera_enabled && !m_tracker_handle) {
-        m_tracker_handle = psmove_tracker_new();
-        if (!m_tracker_handle) {
-            m_interface->SendWarning("No camera backend available; disabling camera tracking.");
-            m_camera_enabled = false;
-        }
-    }
-
-    if (!m_camera_calibrated) {
-        calibrate_camera();
-    }
+    const double now = osaGetTime();
+    // Drive camera state machine
+    camera_step_(now);
 
     if (!m_move_handle) {
         m_measured_cp.SetValid(false);
@@ -246,8 +253,9 @@ void mtsPSMove::Run(void)
         return;
     }
 
-    // If camera tracking is active, refresh tracker state this cycle
-    if (m_camera_enabled && m_tracker_handle) {
+    if (m_tracker_handle &&
+        (m_camera_status == CameraStatus::Calibrating ||
+         m_camera_status == CameraStatus::Ready)) {
         psmove_tracker_update_image(m_tracker_handle);
         psmove_tracker_update(m_tracker_handle, nullptr);
     }
@@ -387,25 +395,22 @@ void mtsPSMove::update_data(void)
         m_measured_cp.SetValid(false);
     }
 
-    // Translation via camera tracking (if enabled)
-    if (m_camera_enabled && m_tracker_handle) {
-        float u = 0.f, v = 0.f, r = 0.f;
+// Translation via camera (if Ready/Lost we still try to compute)
+    if (m_tracker_handle) {
+        float u=0.f, v=0.f, r=0.f;
         psmove_tracker_get_position(m_tracker_handle, m_move_handle, &u, &v, &r);
-        bool ok = std::isfinite(u) && std::isfinite(v) && std::isfinite(r) && (r > 1e-6f);
+        const bool ok = std::isfinite(u) && std::isfinite(v) && std::isfinite(r) && (r > 1e-6f);
         if (ok) {
-            const double Z = (m_fx * m_sphere_radius_m) / static_cast<double>(r);
-            const double X = (static_cast<double>(u) - m_cx) * Z / m_fx;
-            const double Y = (static_cast<double>(v) - m_cy) * Z / m_fy;
-
+            const double Z = (m_fx * m_sphere_radius_m) / double(r);
+            const double X = (double(u) - m_cx) * Z / m_fx;
+            const double Y = (double(v) - m_cy) * Z / m_fy;
             vct3 p_cam; p_cam.Assign(X, Y, Z);
             vct3 p_w = m_R_world_cam * p_cam + m_t_world_cam;
             m_measured_cp.Position().Translation().Assign(p_w[0], p_w[1], p_w[2]);
-        } else {
-            // Tracking lost; keep previous translation
         }
+        // If not ok, we just keep last translation; no status change.
     } else {
-        // Translation unknown without camera tracker; keep zero
-        m_measured_cp.Position().Translation() = vct3(0.0);
+        m_measured_cp.Position().Translation().Assign(0.0, 0.0, 0.0);
     }
 }
 
@@ -436,54 +441,14 @@ void mtsPSMove::reset_orientation(void)
     psmove_reset_orientation(m_move_handle);
 }
 
-void mtsPSMove::enable_camera(const bool &enable) // This enables the camera. Might need a better name.
+void mtsPSMove::enable_camera(const bool &enable)
 {
-    m_camera_enabled = enable;
+    m_camera_requested = enable;
     if (!enable) {
-        if (m_tracker_handle) {
-            psmove_tracker_free(m_tracker_handle);
-            m_tracker_handle = nullptr;
-        }
+        camera_stop_();
         return;
     }
-    // Defer tracker creation until controller is present
-    if (!m_move_handle) {
-        return;
-    }
-    if (m_tracker_handle) {
-        // already enabled
-        return;
-    }
-    m_tracker_handle = psmove_tracker_new();
-    if (!m_tracker_handle) {
-        m_camera_enabled = false;
-        m_interface->SendWarning("psmove_tracker_new() failed; camera disabled");
-        return;
-    }
-
-}
-
-void mtsPSMove::calibrate_camera(void) // Try to calibrate/enable tracking; might need a better name.
-{
-    if (!m_camera_enabled || !m_tracker_handle) return;
-
-    // Try to calibrate/enable tracking; avoid infinite loop in component thread
-    const int kMaxTries = 2000; // ~200 cycles below
-    auto st = Tracker_NOT_CALIBRATED;
-    for (int i = 0; i < kMaxTries; ++i) {
-        st = psmove_tracker_enable(m_tracker_handle, m_move_handle);
-        if (st == Tracker_CALIBRATED) break;
-        // osaSleep(0.01); // 10 ms
-    }
-    if (st != Tracker_CALIBRATED) {
-        m_interface->SendWarning("psmove_tracker_enable() failed to calibrate; disabling camera");
-        psmove_tracker_free(m_tracker_handle);
-        m_tracker_handle = nullptr;
-        m_camera_enabled = false;
-        return;
-    }
-    m_camera_calibrated = true;
-    return;
+    camera_start_if_needed_();
 }
 
 void mtsPSMove::set_intrinsics(const vctDouble4 &fx_fy_cx_cy)
@@ -507,4 +472,93 @@ void mtsPSMove::set_camera_translation(const vctDouble3 &translation)
 void mtsPSMove::set_camera_rotation(const vctMatRot3 &rotation)
 {
     m_R_world_cam = rotation;
+}
+
+// ----------------- Camera state machine -----------------
+void mtsPSMove::camera_set_status_(CameraStatus s, const char *info)
+{
+    if (m_camera_status == s) return;
+    m_camera_status = s;
+
+    m_camera_status_str = cam_status_str(s);
+    if (info) m_camera_status_str += std::string(" (") + info + ")";
+
+    switch (s) {
+        case CameraStatus::Disabled:    m_interface->SendStatus("Camera: Disabled"); break;
+        case CameraStatus::Starting:    m_interface->SendStatus("Camera: Starting"); break;
+        case CameraStatus::Calibrating: m_interface->SendStatus("Camera: Calibrating"); break;
+        case CameraStatus::Ready:       m_interface->SendStatus("Camera: Ready"); break;
+        case CameraStatus::Error:       m_interface->SendError("Camera: Error"); break;
+    }
+}
+
+void mtsPSMove::camera_start_if_needed_()
+{
+    const double now = osaGetTime();
+    if (!m_move_handle) return; // wait until controller is connected
+    if (m_tracker_handle) return; // already have a handle
+    if ((now - m_cam_last_enable_try_sec) < m_cam_retry_period_sec) return;
+
+    m_cam_last_enable_try_sec = now;
+
+    m_tracker_handle = psmove_tracker_new();
+    if (!m_tracker_handle) {
+        camera_set_status_(CameraStatus::Error, "no camera backend");
+        return;
+    }
+    camera_set_status_(CameraStatus::Starting);
+    // Kick calibration on next step
+}
+
+void mtsPSMove::camera_step_(double now_sec)
+{
+    // Honor desired state
+    if (!m_camera_requested) {
+        if (m_tracker_handle) camera_stop_();
+        return;
+    }
+    if (!m_tracker_handle) {
+        camera_start_if_needed_();
+        return;
+    }
+
+    // Starting -> issue enable; if instant CALIBRATED, become Ready; else go Calibrating
+    if (m_camera_status == CameraStatus::Starting) {
+        auto st = psmove_tracker_enable(m_tracker_handle, m_move_handle);
+        if (st == Tracker_CALIBRATED) {
+            camera_set_status_(CameraStatus::Ready);
+            return;
+        }
+        m_cam_calib_start_sec = now_sec;
+        camera_set_status_(CameraStatus::Calibrating);
+        return;
+    }
+
+    // Calibrating -> wait until CALIBRATED or timeout; on timeout recreate later
+    if (m_camera_status == CameraStatus::Calibrating) {
+        auto st = psmove_tracker_enable(m_tracker_handle, m_move_handle);
+        if (st == Tracker_CALIBRATED) {
+            // write a message that we are calibrated
+            m_interface->SendStatus("Camera: Calibrated");
+            camera_set_status_(CameraStatus::Ready);
+            return;
+        }
+        if ((now_sec - m_cam_calib_start_sec) > m_cam_calib_timeout_sec) {
+            camera_set_status_(CameraStatus::Error, "calibration timeout");
+            camera_stop_();  // will retry later
+            return;
+        }
+        return;
+    }
+}
+
+void mtsPSMove::camera_stop_()
+{
+    if (m_tracker_handle) {
+        psmove_tracker_free(m_tracker_handle);
+        m_tracker_handle = nullptr;
+    }
+    camera_set_status_(CameraStatus::Disabled);
+    m_cam_last_enable_try_sec = 0.0;
+    m_cam_calib_start_sec = 0.0;
 }
