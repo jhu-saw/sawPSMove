@@ -34,6 +34,9 @@ http://www.cisst.org/cisst/license.txt.
 struct _PSMove;
 typedef struct _PSMove PSMove;
 
+struct _PSMoveTracker;
+typedef struct _PSMoveTracker PSMoveTracker;
+
 class CISST_EXPORT mtsPSMove: public mtsTaskPeriodic
 {
     CMN_DECLARE_SERVICES(CMN_DYNAMIC_CREATION_ONEARG, CMN_LOG_ALLOW_DEFAULT);
@@ -70,10 +73,31 @@ protected:
     void update_data(void);
     void state_command(const std::string & command);
 
+    // Camera commands
+    void enable_camera(const bool &enable); // This enables the camera. Might need a better name.
+    void calibrate_camera(void); // Try to calibrate/enable tracking; might need a better name.
+    void set_intrinsics(const vctDouble4 &fx_fy_cx_cy);
+    void set_sphere_radius(const double &radius_m);
+    void set_camera_translation(const vctDouble3 &translation);
+    void set_camera_rotation(const vctMatRot3 &rotation);
+
     // PSMove handle
     PSMove * m_move_handle = nullptr;
+    // Tracker handle (optional)
+    PSMoveTracker * m_tracker_handle = nullptr;
+
     int m_controller_index = 0;
     bool m_orientation_available = false;
+
+    // Camera pipeline configuration
+    bool   m_camera_enabled = true; // FIXME: default to true for now. 
+    bool   m_camera_calibrated = false;
+    double m_fx = 800.0, m_fy = 800.0, m_cx = 320.0, m_cy = 240.0;  // pixels
+    double m_sphere_radius_m = 0.0225;                               // ~22.5 mm ball
+
+    // Camera to world transform
+    vctMatRot3 m_R_world_cam;  // 3x3 rotation
+    vctDouble3 m_t_world_cam;  // world ⟵ cam
 
     // State
     prmOperatingState m_operating_state;

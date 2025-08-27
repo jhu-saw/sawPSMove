@@ -29,6 +29,7 @@ http://www.cisst.org/cisst/license.txt.
 
 extern "C" {
 #include <psmoveapi/psmove.h>
+#include <psmoveapi/psmove_tracker.h>
 }
 
 
@@ -53,6 +54,9 @@ void mtsPSMove::initialize(void)
     m_measured_cp.SetMovingFrame("psmove");
     m_measured_cp.SetReferenceFrame("world");
     m_measured_cp.SetTimestamp(0.0);
+
+    m_R_world_cam.Assign(vctMatRot3::Identity());
+    m_t_world_cam.Assign(0.0, 0.0, 0.0);
 
     m_gripper_measured_js.SetValid(false);
     m_gripper_measured_js.Name().resize(1);
@@ -104,6 +108,13 @@ void mtsPSMove::initialize(void)
         m_interface->AddCommandWrite(&mtsPSMove::set_LED, this, "set_LED");
         m_interface->AddCommandWrite(&mtsPSMove::rumble, this, "rumble");
         m_interface->AddCommandVoid(&mtsPSMove::reset_orientation, this, "reset_orientation");
+
+        // Camera / tracking commands
+        m_interface->AddCommandWrite(&mtsPSMove::enable_camera, this, "enable_camera");
+        m_interface->AddCommandWrite(&mtsPSMove::set_intrinsics, this, "set_intrinsics"); // fx,fy,cx,cy
+        m_interface->AddCommandWrite(&mtsPSMove::set_sphere_radius, this, "set_sphere_radius");
+        m_interface->AddCommandWrite(&mtsPSMove::set_camera_translation, this, "set_camera_translation");
+        m_interface->AddCommandWrite(&mtsPSMove::set_camera_rotation, this, "set_camera_rotation");
     }
 
     // button interfaces
@@ -140,6 +151,10 @@ mtsPSMove::~mtsPSMove()
         psmove_disconnect(m_move_handle);
         m_move_handle = nullptr;
     }
+    if (m_tracker_handle) {
+        psmove_tracker_free(m_tracker_handle);
+        m_tracker_handle = nullptr;
+    }
 }
 
 
@@ -157,6 +172,11 @@ void mtsPSMove::Configure(const std::string &args)
             m_controller_index = std::atoi(args.c_str());
         }
     }
+    // TODO: Look at modifying example code to see how to enable camera
+    // Enable camera / tracking if requested
+    // if (args.find("camera:1") != std::string::npos) {
+    //     m_camera_enabled = true;
+    // }
 }
 
 
@@ -189,7 +209,7 @@ void mtsPSMove::Startup(void)
         CMN_LOG_CLASS_INIT_WARNING << "No magnetometer calibration; orientation may be unavailable." << std::endl;
     }
 
-    m_interface->SendStatus("Testing");
+    m_interface->SendStatus("Testing"); // TODO: Might need to be removed.
 
     // default dim cyan
     psmove_set_leds(m_move_handle, 0, 32, 32);
@@ -199,6 +219,7 @@ void mtsPSMove::Startup(void)
     m_operating_state.SetState(prmOperatingState::ENABLED);
     m_operating_state.SetIsHomed(true);
     m_operating_state_event(m_operating_state);
+
 }
 
 
@@ -206,11 +227,29 @@ void mtsPSMove::Run(void)
 {
     ProcessQueuedCommands();
 
+    if (m_camera_enabled && !m_tracker_handle) {
+        m_tracker_handle = psmove_tracker_new();
+        if (!m_tracker_handle) {
+            m_interface->SendWarning("No camera backend available; disabling camera tracking.");
+            m_camera_enabled = false;
+        }
+    }
+
+    if (!m_camera_calibrated) {
+        calibrate_camera();
+    }
+
     if (!m_move_handle) {
         m_measured_cp.SetValid(false);
         m_gripper_measured_js.SetValid(false);
         osaSleep(0.005); // don’t spin
         return;
+    }
+
+    // If camera tracking is active, refresh tracker state this cycle
+    if (m_camera_enabled && m_tracker_handle) {
+        psmove_tracker_update_image(m_tracker_handle);
+        psmove_tracker_update(m_tracker_handle, nullptr);
     }
 
     // poll all pending samples
@@ -326,7 +365,7 @@ void mtsPSMove::update_data(void)
     m_gyro.Assign(gx, gy, gz);
 
     // Orientation → rotation matrix
-    vctMatRot3 R;
+    // vctMatRot3 R;
     if (m_orientation_available) {
         float qw = 1.0f, qx = 0.0f, qy = 0.0f, qz = 0.0f;
         // NOTE: In this API variant, psmove_get_orientation returns void.
@@ -348,8 +387,26 @@ void mtsPSMove::update_data(void)
         m_measured_cp.SetValid(false);
     }
 
-    // Translation unknown without camera tracker; keep zero
-    m_measured_cp.Position().Translation() = vct3(0.0);
+    // Translation via camera tracking (if enabled)
+    if (m_camera_enabled && m_tracker_handle) {
+        float u = 0.f, v = 0.f, r = 0.f;
+        psmove_tracker_get_position(m_tracker_handle, m_move_handle, &u, &v, &r);
+        bool ok = std::isfinite(u) && std::isfinite(v) && std::isfinite(r) && (r > 1e-6f);
+        if (ok) {
+            const double Z = (m_fx * m_sphere_radius_m) / static_cast<double>(r);
+            const double X = (static_cast<double>(u) - m_cx) * Z / m_fx;
+            const double Y = (static_cast<double>(v) - m_cy) * Z / m_fy;
+
+            vct3 p_cam; p_cam.Assign(X, Y, Z);
+            vct3 p_w = m_R_world_cam * p_cam + m_t_world_cam;
+            m_measured_cp.Position().Translation().Assign(p_w[0], p_w[1], p_w[2]);
+        } else {
+            // Tracking lost; keep previous translation
+        }
+    } else {
+        // Translation unknown without camera tracker; keep zero
+        m_measured_cp.Position().Translation() = vct3(0.0);
+    }
 }
 
 
@@ -377,4 +434,77 @@ void mtsPSMove::reset_orientation(void)
 {
     if (!m_move_handle) return;
     psmove_reset_orientation(m_move_handle);
+}
+
+void mtsPSMove::enable_camera(const bool &enable) // This enables the camera. Might need a better name.
+{
+    m_camera_enabled = enable;
+    if (!enable) {
+        if (m_tracker_handle) {
+            psmove_tracker_free(m_tracker_handle);
+            m_tracker_handle = nullptr;
+        }
+        return;
+    }
+    // Defer tracker creation until controller is present
+    if (!m_move_handle) {
+        return;
+    }
+    if (m_tracker_handle) {
+        // already enabled
+        return;
+    }
+    m_tracker_handle = psmove_tracker_new();
+    if (!m_tracker_handle) {
+        m_camera_enabled = false;
+        m_interface->SendWarning("psmove_tracker_new() failed; camera disabled");
+        return;
+    }
+
+}
+
+void mtsPSMove::calibrate_camera(void) // Try to calibrate/enable tracking; might need a better name.
+{
+    if (!m_camera_enabled || !m_tracker_handle) return;
+
+    // Try to calibrate/enable tracking; avoid infinite loop in component thread
+    const int kMaxTries = 2000; // ~200 cycles below
+    auto st = Tracker_NOT_CALIBRATED;
+    for (int i = 0; i < kMaxTries; ++i) {
+        st = psmove_tracker_enable(m_tracker_handle, m_move_handle);
+        if (st == Tracker_CALIBRATED) break;
+        // osaSleep(0.01); // 10 ms
+    }
+    if (st != Tracker_CALIBRATED) {
+        m_interface->SendWarning("psmove_tracker_enable() failed to calibrate; disabling camera");
+        psmove_tracker_free(m_tracker_handle);
+        m_tracker_handle = nullptr;
+        m_camera_enabled = false;
+        return;
+    }
+    m_camera_calibrated = true;
+    return;
+}
+
+void mtsPSMove::set_intrinsics(const vctDouble4 &fx_fy_cx_cy)
+{
+    m_fx = fx_fy_cx_cy[0];
+    m_fy = fx_fy_cx_cy[1];
+    m_cx = fx_fy_cx_cy[2];
+    m_cy = fx_fy_cx_cy[3];
+}
+
+void mtsPSMove::set_sphere_radius(const double &radius_m)
+{
+    m_sphere_radius_m = std::max(1e-4, radius_m);
+}
+
+void mtsPSMove::set_camera_translation(const vctDouble3 &translation)
+{
+    m_t_world_cam = translation;
+}
+
+void mtsPSMove::set_camera_rotation(const vctMatRot3 &rotation)
+{
+    m_R_world_cam = rotation;
 }
