@@ -38,18 +38,6 @@ CMN_IMPLEMENT_SERVICES_DERIVED_ONEARG(mtsPSMove,
                                       mtsTaskPeriodic,
                                       mtsTaskPeriodicConstructorArg);
 
-static const char* cam_status_str(mtsPSMove::CameraStatus s) {
-    switch (s) {
-        case mtsPSMove::CameraStatus::Disabled:    return "Disabled";
-        case mtsPSMove::CameraStatus::Starting:    return "Starting";
-        case mtsPSMove::CameraStatus::Calibrating: return "Calibrating";
-        case mtsPSMove::CameraStatus::Ready:       return "Ready";
-        case mtsPSMove::CameraStatus::Error:       return "Error";
-    }
-    return "Unknown";
-}
-
-
 mtsPSMove::mtsPSMove(const std::string & component_name, const double & period_in_seconds):
     mtsTaskPeriodic(component_name, period_in_seconds)
 {
@@ -491,7 +479,11 @@ void mtsPSMove::camera_set_status_(CameraStatus s, const char *info)
     if (m_camera_status == s) return;
     m_camera_status = s;
 
-    m_camera_status_str = cam_status_str(s);
+    static constexpr const char* status_names[] = {
+        "Disabled", "Starting", "Calibrating", "Ready", "Error"
+    };
+    const auto index = static_cast<size_t>(s);
+    m_camera_status_str = (index < sizeof(status_names)/sizeof(status_names[0])) ? status_names[index] : "Unknown";
     if (info) m_camera_status_str += std::string(" (") + info + ")";
 
     switch (s) {
