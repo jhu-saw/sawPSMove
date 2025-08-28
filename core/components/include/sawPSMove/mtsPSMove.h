@@ -104,7 +104,7 @@ protected:
     bool m_orientation_available = false;
 
     // Camera config
-    bool m_camera_requested = true;                // user's desired state
+    bool m_camera_requested = false;                // user's desired state
     CameraStatus m_camera_status = CameraStatus::Disabled;
     bool m_camera_have_pose = false;
     double m_fx = 800.0, m_fy = 800.0, m_cx = 320.0, m_cy = 240.0; // intrinsics

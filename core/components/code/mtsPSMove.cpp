@@ -211,7 +211,7 @@ void mtsPSMove::Startup(void)
         return;
     }
 
-    // psmove_set_rate_limiting(m_move_handle, 1);
+    psmove_set_rate_limiting(m_move_handle, 1);
 
     if (psmove_has_calibration(m_move_handle)) {
         psmove_enable_orientation(m_move_handle, 1);
@@ -328,11 +328,22 @@ void mtsPSMove::update_data(void)
         _new_button = m_buttons & Btn_CROSS;
         if (_new_button != m_cross_value) {
             m_cross_event(_new_button ? m_event_payloads.pressed : m_event_payloads.released);
+            // Reset orientation when Cross button is pressed
+            // if (_new_button) {
+            //     reset_orientation();
+            //     m_interface->SendStatus("Orientation reset via Cross button");
+            // }
             m_cross_value = _new_button;
         }
         _new_button = m_buttons & Btn_MOVE;
         if (_new_button != m_move_value) {
             m_move_event(_new_button ? m_event_payloads.pressed : m_event_payloads.released);
+            // Toggle camera tracking when Move button is pressed
+            if (_new_button) {
+                m_camera_requested = !m_camera_requested;
+                enable_camera(m_camera_requested);
+                m_interface->SendStatus(m_camera_requested ? "Camera enabled via Move button" : "Camera disabled via Move button");
+            }
             m_move_value = _new_button;
         }
     }
@@ -500,12 +511,29 @@ void mtsPSMove::camera_start_if_needed_()
     if ((now - m_cam_last_enable_try_sec) < m_cam_retry_period_sec) return;
 
     m_cam_last_enable_try_sec = now;
-
-    m_tracker_handle = psmove_tracker_new();
-    if (!m_tracker_handle) {
-        camera_set_status_(CameraStatus::Error, "no camera backend");
+    
+    // Check if any cameras/trackers are available before attempting to create one
+    int tracker_count = psmove_tracker_count_connected(); // FIXME: This is useless. It lists all connected trackers, not if they are actually usable.
+    if (tracker_count <= 0) {
+        // No cameras available - warn user and disable camera functionality
+        m_interface->SendWarning("Camera requested but no cameras detected. Continuing with orientation-only tracking.");
+        m_camera_requested = false;  // Disable further camera attempts
+        camera_set_status_(CameraStatus::Disabled);
         return;
     }
+
+    m_tracker_handle = psmove_tracker_new(); // BUG: If camera is requested on startup and there is no camera, then the mtsComponent doesnt start.
+    if (!m_tracker_handle) {
+        // Camera creation failed - warn user and disable camera functionality
+        m_interface->SendWarning("Camera requested but tracker creation failed. Continuing with orientation-only tracking.");
+        m_camera_requested = false;  // Disable further camera attempts
+        camera_set_status_(CameraStatus::Disabled);
+        return;
+    }
+    
+    // >>> disable LED rate limiting during calibration <<<
+    psmove_set_rate_limiting(m_move_handle, 0);
+
     camera_set_status_(CameraStatus::Starting);
     // Kick calibration on next step
 }
@@ -527,10 +555,13 @@ void mtsPSMove::camera_step_(double now_sec)
         auto st = psmove_tracker_enable(m_tracker_handle, m_move_handle);
         if (st == Tracker_CALIBRATED) {
             camera_set_status_(CameraStatus::Ready);
+            // >>> re-enable rate limiting once Ready <<<
+            psmove_set_rate_limiting(m_move_handle, 1);
             return;
         }
         m_cam_calib_start_sec = now_sec;
         camera_set_status_(CameraStatus::Calibrating);
+        m_interface->SendStatus("Camera: Calibrating");
         return;
     }
 
@@ -544,8 +575,10 @@ void mtsPSMove::camera_step_(double now_sec)
             return;
         }
         if ((now_sec - m_cam_calib_start_sec) > m_cam_calib_timeout_sec) {
-            camera_set_status_(CameraStatus::Error, "calibration timeout");
-            camera_stop_();  // will retry later
+            // Camera calibration failed - warn user and disable camera functionality
+            m_interface->SendWarning("Camera calibration timeout. Continuing with orientation-only tracking.");
+            m_camera_requested = false;  // Disable further camera attempts
+            camera_stop_();
             return;
         }
         return;
@@ -557,6 +590,10 @@ void mtsPSMove::camera_stop_()
     if (m_tracker_handle) {
         psmove_tracker_free(m_tracker_handle);
         m_tracker_handle = nullptr;
+    }
+    // Re-enable rate limiting when stopping camera
+    if (m_move_handle) {
+        psmove_set_rate_limiting(m_move_handle, 1);
     }
     camera_set_status_(CameraStatus::Disabled);
     m_cam_last_enable_try_sec = 0.0;
