@@ -21,6 +21,15 @@ set (REQUIRED_CISST_LIBRARIES cisstCommon
 
 find_package (cisst 1.2.0 COMPONENTS ${REQUIRED_CISST_LIBRARIES})
 
+# # Optional OpenCV (needed by psmoveapi_tracker)
+find_package(OpenCV QUIET)
+
+if(OpenCV_FOUND)
+  # OpenCV found - tracking support enabled
+else()
+  message("Building without OpenCV support. PSMove tracking will be disabled.")
+endif()
+
 if (cisst_FOUND_AS_REQUIRED)
 
   # load cisst configuration
@@ -58,6 +67,9 @@ if (cisst_FOUND_AS_REQUIRED)
                          FOLDER "sawPSMove")
 
   target_link_libraries (sawPSMove psmoveapi)
+  if(OpenCV_FOUND)
+    target_link_libraries(sawPSMove psmoveapi_tracker ${OpenCV_LIBRARIES})
+  endif()
 
   cisst_target_link_libraries (sawPSMove ${REQUIRED_CISST_LIBRARIES})
 

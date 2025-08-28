@@ -34,6 +34,9 @@ http://www.cisst.org/cisst/license.txt.
 struct _PSMove;
 typedef struct _PSMove PSMove;
 
+struct _PSMoveTracker;
+typedef struct _PSMoveTracker PSMoveTracker;
+
 class CISST_EXPORT mtsPSMove: public mtsTaskPeriodic
 {
     CMN_DECLARE_SERVICES(CMN_DYNAMIC_CREATION_ONEARG, CMN_LOG_ALLOW_DEFAULT);
@@ -58,6 +61,14 @@ public:
     void Run(void) override;
     void Cleanup(void) override;
 
+    enum class CameraStatus {
+        Disabled,
+        Starting,       // tracker handle being created
+        Calibrating,    // enable() issued, waiting on Tracker_CALIBRATED
+        Ready,          // good pose updates
+        Error           // unrecoverable error
+    };
+
 protected:
 
     // Utility commands
@@ -65,15 +76,46 @@ protected:
     void rumble(const double & strength); // 0..1
     void reset_orientation(void);
 
+    // Camera control API 
+    void enable_camera(const bool &enable);
+    void set_intrinsics(const vctDouble4 &fx_fy_cx_cy);
+    void set_sphere_radius(const double &radius_m);
+    void set_camera_translation(const vctDouble3 &translation);
+    void set_camera_rotation(const vctMatRot3 &rotation);
+
     // Internals
     void initialize(void);
     void update_data(void);
     void state_command(const std::string & command);
 
+    // ---- Camera state machine (internal) ----
+    void camera_start_if_needed_();
+    void camera_step_(double now_sec);              // drive calibration / status
+    void camera_stop_();
+    void camera_set_status_(CameraStatus s, const char *info=nullptr);
+
+    
     // PSMove handle
     PSMove * m_move_handle = nullptr;
+    // Tracker handle (optional)
+    PSMoveTracker * m_tracker_handle = nullptr;
+
     int m_controller_index = 0;
     bool m_orientation_available = false;
+
+    // Camera config
+    bool m_camera_requested = false;                // user's desired state
+    CameraStatus m_camera_status = CameraStatus::Disabled;
+    bool m_camera_have_pose = false;
+    double m_fx = 800.0, m_fy = 800.0, m_cx = 320.0, m_cy = 240.0; // intrinsics
+    double m_sphere_radius_m = 0.0225;             // ~22.5 mm ball
+    vctMatRot3 m_R_world_cam;                      // camera rotation in world
+    vctDouble3 m_t_world_cam;                      // camera translation in world
+    double m_cam_last_enable_try_sec = 0.0;
+    double m_cam_calib_start_sec = 0.0;
+    double m_cam_retry_period_sec = 1.0;           // re-create tracker / re-enable cadence
+    double m_cam_calib_timeout_sec = 15.0;          // time to reach CALIBRATED
+    std::string m_camera_status_str;               // Camera status string for UI/Qt
 
     // State
     prmOperatingState m_operating_state;
