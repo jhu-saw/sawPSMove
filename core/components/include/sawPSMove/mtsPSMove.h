@@ -79,7 +79,6 @@ protected:
     // Camera control API 
     void enable_camera(const bool &enable);
     void set_intrinsics(const vctDouble4 &fx_fy_cx_cy);
-    void set_sphere_radius(const double &radius_m);
     void set_camera_translation(const vctDouble3 &translation);
     void set_camera_rotation(const vctMatRot3 &rotation);
 
@@ -93,6 +92,8 @@ protected:
     void camera_step_(double now_sec);              // drive calibration / status
     void camera_stop_();
     void camera_set_status_(CameraStatus s, const char *info=nullptr);
+    void camera_init_image_center_from_tracker_();
+    void camera_init_fx_fy_if_needed_(int width_px, int height_px);
 
     
     // PSMove handle
@@ -107,8 +108,7 @@ protected:
     bool m_camera_requested = false;                // user's desired state
     CameraStatus m_camera_status = CameraStatus::Disabled;
     bool m_camera_have_pose = false;
-    double m_fx = 800.0, m_fy = 800.0, m_cx = 320.0, m_cy = 240.0; // intrinsics
-    double m_sphere_radius_m = 0.0225;             // ~22.5 mm ball
+    double m_fx = 0.0, m_fy = 0.0, m_cx = 0.0, m_cy = 0.0; // intrinsics
     vctMatRot3 m_R_world_cam;                      // camera rotation in world
     vctDouble3 m_t_world_cam;                      // camera translation in world
     double m_cam_last_enable_try_sec = 0.0;

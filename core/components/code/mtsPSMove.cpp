@@ -112,7 +112,6 @@ void mtsPSMove::initialize(void)
         // Camera / tracking commands
         m_interface->AddCommandWrite(&mtsPSMove::enable_camera, this, "enable_camera");
         m_interface->AddCommandWrite(&mtsPSMove::set_intrinsics, this, "set_intrinsics"); // fx,fy,cx,cy
-        m_interface->AddCommandWrite(&mtsPSMove::set_sphere_radius, this, "set_sphere_radius");
         m_interface->AddCommandWrite(&mtsPSMove::set_camera_translation, this, "set_camera_translation");
         m_interface->AddCommandWrite(&mtsPSMove::set_camera_rotation, this, "set_camera_rotation");
     }
@@ -172,7 +171,7 @@ void mtsPSMove::Configure(const std::string &args)
             m_controller_index = std::atoi(args.c_str());
         }
     }
-    // TODO: Ignore this code for now. It is enabled by hardcoding m_camera_requested to true in the header.
+    // TODO: Ignore this code for now. It is disabled by hardcoding m_camera_requested to false in the header.
     // Enable camera / tracking if requested
     // if (args.find("camera:1") != std::string::npos) {
     //     m_camera_requested = true;
@@ -259,7 +258,6 @@ void mtsPSMove::Cleanup(void)
 {
     // handled in destructor
 }
-
 
 void mtsPSMove::state_command(const std::string & command)
 {
@@ -394,23 +392,37 @@ void mtsPSMove::update_data(void)
         m_measured_cp.SetValid(false);
     }
 
-// Translation via camera (if Ready/Lost we still try to compute)
     if (m_tracker_handle) {
-        float u=0.f, v=0.f, r=0.f;
-        psmove_tracker_get_position(m_tracker_handle, m_move_handle, &u, &v, &r);
-        const bool ok = std::isfinite(u) && std::isfinite(v) && std::isfinite(r) && (r > 1e-6f);
-        if (ok) {
-            const double Z = (m_fx * m_sphere_radius_m) / double(r);
+        float u = 0.f, v = 0.f, r = 0.f;
+        const int age_ms = psmove_tracker_get_position(m_tracker_handle, m_move_handle, &u, &v, &r);
+        const bool ok_px = std::isfinite(u) && std::isfinite(v) && std::isfinite(r) && (r > 1e-6f) && (age_ms >= 0);
+
+        if (ok_px) {
+            // Seed (cx, cy) from the actual tracker image size once
+            camera_init_image_center_from_tracker_();
+            const float dist_cm = psmove_tracker_distance_from_radius(m_tracker_handle, r);
+            const double Z = double(dist_cm) * 0.01; // convert cm -> meters
+            // provide a reasonable fx,fy once.
+            int w = 0, h = 0; 
+            psmove_tracker_get_size(m_tracker_handle, &w, &h);
+            camera_init_fx_fy_if_needed_(w, h);
+
+            // Pinhole projection to get X,Y in meters (camera frame).
             const double X = (double(u) - m_cx) * Z / m_fx;
             const double Y = (double(v) - m_cy) * Z / m_fy;
-            vct3 p_cam; p_cam.Assign(X, Y, Z);
-            vct3 p_w = m_R_world_cam * p_cam + m_t_world_cam;
+
+            const vct3 p_cam(X, Y, Z);
+            const vct3 p_w = m_R_world_cam * p_cam + m_t_world_cam;
+
             m_measured_cp.Position().Translation().Assign(p_w[0], p_w[1], p_w[2]);
+            m_measured_cp.SetValid(true); 
         }
-        // If not ok, we just keep last translation; no status change.
+        // If not ok_px, we keep last translation to avoid output flicker on intermittent tracking.
     } else {
+        // No tracker
         m_measured_cp.Position().Translation().Assign(0.0, 0.0, 0.0);
     }
+
 }
 
 
@@ -458,11 +470,6 @@ void mtsPSMove::set_intrinsics(const vctDouble4 &fx_fy_cx_cy)
     m_cy = fx_fy_cx_cy[3];
 }
 
-void mtsPSMove::set_sphere_radius(const double &radius_m)
-{
-    m_sphere_radius_m = std::max(1e-4, radius_m);
-}
-
 void mtsPSMove::set_camera_translation(const vctDouble3 &translation)
 {
     m_t_world_cam = translation;
@@ -496,29 +503,27 @@ void mtsPSMove::camera_set_status_(CameraStatus s, const char *info)
 }
 
 void mtsPSMove::camera_start_if_needed_()
-{
+{   
+    if (!m_move_handle || m_tracker_handle) return; 
+    
     const double now = osaGetTime();
-    if (!m_move_handle) return; // wait until controller is connected
-    if (m_tracker_handle) return; // already have a handle
     if ((now - m_cam_last_enable_try_sec) < m_cam_retry_period_sec) return;
 
     m_cam_last_enable_try_sec = now;
-    
+
     // Check if any cameras/trackers are available before attempting to create one
     int tracker_count = psmove_tracker_count_connected(); // FIXME: This is useless. It lists all connected trackers, not if they are actually usable.
     if (tracker_count <= 0) {
-        // No cameras available - warn user and disable camera functionality
         m_interface->SendWarning("Camera requested but no cameras detected. Continuing with orientation-only tracking.");
-        m_camera_requested = false;  // Disable further camera attempts
+        m_camera_requested = false;  
         camera_set_status_(CameraStatus::Disabled);
         return;
     }
 
-    m_tracker_handle = psmove_tracker_new(); // BUG: If camera is requested on startup and there is no camera, then the mtsComponent doesnt start.
+    m_tracker_handle = psmove_tracker_new(); // BUG: If camera is requested on startup and there is no compatible camera, then the mtsComponent doesnt start/gets stuck.
     if (!m_tracker_handle) {
-        // Camera creation failed - warn user and disable camera functionality
         m_interface->SendWarning("Camera requested but tracker creation failed. Continuing with orientation-only tracking.");
-        m_camera_requested = false;  // Disable further camera attempts
+        m_camera_requested = false;  
         camera_set_status_(CameraStatus::Disabled);
         return;
     }
@@ -528,6 +533,37 @@ void mtsPSMove::camera_start_if_needed_()
 
     camera_set_status_(CameraStatus::Starting);
     // Kick calibration on next step
+}
+
+// Uses the tracker's actual image size to seed (cx, cy) once.
+void mtsPSMove::camera_init_image_center_from_tracker_()
+{
+    if (!m_tracker_handle) { return; }
+    int w = 0, h = 0;
+    psmove_tracker_get_size(m_tracker_handle, &w, &h); // ask tracker which image size it's using
+    if (w > 0 && h > 0) {
+        // avoid overwriting values set via set_intrinsics().
+        if (!(std::isfinite(m_cx) && std::isfinite(m_cy) && m_cx != 0.0 && m_cy != 0.0)) {
+            m_cx = 0.5 * double(w);  // assume principal point at image center
+            m_cy = 0.5 * double(h);
+        }
+    }
+}
+
+// Provides a one-time sensible default for fx, fy if the user never sets intrinsics.
+// used to scale X,Y from pixels to meters; Z comes from the tracker model.
+void mtsPSMove::camera_init_fx_fy_if_needed_(int width_px, [[maybe_unused]] int height_px)
+{
+    if (m_fx > 0.0 && m_fy > 0.0) return; // respect user-provided values
+
+    // PS Eye wide FOV is ~75–80° horizontally. Use 75° as a conservative default.
+    const double fov_h_deg = 75.0;
+    const double fov_h_rad = fov_h_deg * (M_PI / 180.0);
+
+    // fx ~ (W/2) / tan(FOV/2). Assume square pixels -> fy = fx.
+    const double fx_guess = (0.5 * double(width_px)) / std::tan(0.5 * fov_h_rad);
+    if (!(m_fx > 0.0)) m_fx = fx_guess;
+    if (!(m_fy > 0.0)) m_fy = fx_guess;
 }
 
 void mtsPSMove::camera_step_(double now_sec)
