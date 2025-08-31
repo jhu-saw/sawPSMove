@@ -100,7 +100,7 @@ rosrun ps_move ps_move
 
 For ROS 2, run:
 ```sh
-ros2 run psmove psmove
+ros2 run ps_move ps_move
 ```
 
 ## Other "middleware"
