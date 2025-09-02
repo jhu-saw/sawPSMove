@@ -14,7 +14,7 @@ as:
 
 # Dependencies
  * cisst libraries: https://github.com/jhu-cisst/cisst
- * *psmoveapi*: https://github.com/thp/psmoveap
+ * *psmoveapi*: https://github.com/thp/psmoveapi
  * Qt for user interface
  * ROS and ROS CRTK (optional) - works with ROS 1 and ROS 2!
 
@@ -22,7 +22,7 @@ as:
 
 You will first need to download, compile and install the
 *psmoveapi*. You can git clone the code from
-https://github.com/thp/psmoveap.  Then configure the build with
+https://github.com/thp/psmoveapi.  Then configure the build with
 `ccmake` or `cmake-gui` , set the build type to `Release` and the
 install prefix to `/usr/local`.  Build with `make` and install with
 `sudo make install`.  
