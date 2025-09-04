@@ -88,12 +88,12 @@ protected:
     void state_command(const std::string & command);
 
     // ---- Camera state machine (internal) ----
-    void camera_start_if_needed_();
-    void camera_step_(double now_sec);              // drive calibration / status
-    void camera_stop_();
-    void camera_set_status_(CameraStatus s, const char *info=nullptr);
-    void camera_init_image_center_from_tracker_();
-    void camera_init_fx_fy_if_needed_(int width_px, int height_px);
+    void camera_start_if_needed(void);
+    void camera_step(const double now_sec);              // drive calibration / status
+    void camera_stop(void);
+    void camera_set_status(const CameraStatus s);
+    void camera_init_image_center_from_tracker(void);
+    void camera_init_fx_fy_if_needed(const int width_px, const int height_px);
 
     
     // PSMove handle

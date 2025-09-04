@@ -102,7 +102,6 @@ void mtsPSMove::initialize(void)
         m_interface->AddCommandReadState(StateTable, m_trigger, "trigger");
         m_interface->AddCommandReadState(StateTable, m_battery, "battery");
         m_interface->AddCommandReadState(StateTable, m_buttons, "get_buttons");
-        // m_interface->AddCommandReadState(StateTable, m_camera_status_str, "camera/status");
 
         // Write commands
         m_interface->AddCommandWrite(&mtsPSMove::set_LED, this, "set_LED");
@@ -140,7 +139,7 @@ void mtsPSMove::initialize(void)
     }
 
     // Initial camera status
-    camera_set_status_(CameraStatus::Disabled);
+    camera_set_status(CameraStatus::Disabled);
 }
 
 
@@ -153,7 +152,7 @@ mtsPSMove::~mtsPSMove()
         psmove_disconnect(m_move_handle);
         m_move_handle = nullptr;
     }
-    camera_stop_();
+    camera_stop();
 }
 
 
@@ -211,8 +210,10 @@ void mtsPSMove::Startup(void)
     m_interface->SendStatus("Testing"); 
 
     // honor requested camera state
-    if (m_camera_requested) camera_start_if_needed_();
-
+    if (m_camera_requested) {
+        camera_start_if_needed();
+    }
+    
     // default dim cyan
     psmove_set_leds(m_move_handle, 0, 32, 32);
     psmove_update_leds(m_move_handle);
@@ -229,14 +230,13 @@ void mtsPSMove::Run(void)
 {
     ProcessQueuedCommands();
 
-    const double now = osaGetTime();
     // Drive camera state machine
-    camera_step_(now);
+    const double now = osaGetTime();
+    camera_step(now);
 
     if (!m_move_handle) {
         m_measured_cp.SetValid(false);
         m_gripper_measured_js.SetValid(false);
-        osaSleep(0.005); // don’t spin
         return;
     }
 
@@ -258,6 +258,7 @@ void mtsPSMove::Cleanup(void)
 {
     // handled in destructor
 }
+
 
 void mtsPSMove::state_command(const std::string & command)
 {
@@ -314,23 +315,25 @@ void mtsPSMove::update_data(void)
         _new_button = m_buttons & Btn_CROSS;
         if (_new_button != m_cross_value) {
             m_cross_event(_new_button ? m_event_payloads.pressed : m_event_payloads.released);
-            // Reset orientation when Cross button is pressed
-            // if (_new_button) {
-            //     reset_orientation();
-            //     m_interface->SendStatus("Orientation reset via Cross button");
-            // }
             m_cross_value = _new_button;
         }
         _new_button = m_buttons & Btn_MOVE;
         if (_new_button != m_move_value) {
             m_move_event(_new_button ? m_event_payloads.pressed : m_event_payloads.released);
-            // Toggle camera tracking when Move button is pressed
-            if (_new_button) {
-                m_camera_requested = !m_camera_requested;
-                enable_camera(m_camera_requested);
-                m_interface->SendStatus(m_camera_requested ? "Camera enabled via Move button" : "Camera disabled via Move button");
-            }
             m_move_value = _new_button;
+        }
+
+        // buttons used to control mtsPSMove
+        _new_button = m_buttons & Btn_SELECT;
+        if (_new_button) {
+            m_camera_requested = !m_camera_requested;
+            enable_camera(m_camera_requested);
+            m_interface->SendStatus(m_camera_requested ? "Camera enabled via \"select\" button" : "Camera disabled via \"select\" button");
+        }
+        _new_button = m_buttons & Btn_START;
+        if (_new_button) {
+            reset_orientation();
+            m_interface->SendStatus("Orientation reset via Cross button");
         }
     }
 
@@ -399,13 +402,13 @@ void mtsPSMove::update_data(void)
 
         if (ok_px) {
             // Seed (cx, cy) from the actual tracker image size once
-            camera_init_image_center_from_tracker_();
+            camera_init_image_center_from_tracker();
             const float dist_cm = psmove_tracker_distance_from_radius(m_tracker_handle, r);
             const double Z = double(dist_cm) * 0.01; // convert cm -> meters
             // provide a reasonable fx,fy once.
             int w = 0, h = 0; 
             psmove_tracker_get_size(m_tracker_handle, &w, &h);
-            camera_init_fx_fy_if_needed_(w, h);
+            camera_init_fx_fy_if_needed(w, h);
 
             // Pinhole projection to get X,Y in meters (camera frame).
             const double X = (double(u) - m_cx) * Z / m_fx;
@@ -452,15 +455,17 @@ void mtsPSMove::reset_orientation(void)
     psmove_reset_orientation(m_move_handle);
 }
 
+
 void mtsPSMove::enable_camera(const bool &enable)
 {
     m_camera_requested = enable;
     if (!enable) {
-        camera_stop_();
+        camera_stop();
         return;
     }
-    camera_start_if_needed_();
+    camera_start_if_needed();
 }
+
 
 void mtsPSMove::set_intrinsics(const vctDouble4 &fx_fy_cx_cy)
 {
@@ -470,39 +475,37 @@ void mtsPSMove::set_intrinsics(const vctDouble4 &fx_fy_cx_cy)
     m_cy = fx_fy_cx_cy[3];
 }
 
+
 void mtsPSMove::set_camera_translation(const vctDouble3 &translation)
 {
     m_t_world_cam = translation;
 }
+
 
 void mtsPSMove::set_camera_rotation(const vctMatRot3 &rotation)
 {
     m_R_world_cam = rotation;
 }
 
+
 // ----------------- Camera state machine -----------------
-void mtsPSMove::camera_set_status_(CameraStatus s, const char *info)
+void mtsPSMove::camera_set_status(const CameraStatus s)
 {
-    if (m_camera_status == s) return;
+    if (m_camera_status == s) {
+        return;
+    }
     m_camera_status = s;
-
-    static constexpr const char* status_names[] = {
-        "Disabled", "Starting", "Calibrating", "Ready", "Error"
-    };
-    const auto index = static_cast<size_t>(s);
-    m_camera_status_str = (index < sizeof(status_names)/sizeof(status_names[0])) ? status_names[index] : "Unknown";
-    if (info) m_camera_status_str += std::string(" (") + info + ")";
-
     switch (s) {
-        case CameraStatus::Disabled:    m_interface->SendStatus("Camera: Disabled"); break;
-        case CameraStatus::Starting:    m_interface->SendStatus("Camera: Starting"); break;
-        case CameraStatus::Calibrating: m_interface->SendStatus("Camera: Calibrating"); break;
-        case CameraStatus::Ready:       m_interface->SendStatus("Camera: Ready"); break;
-        case CameraStatus::Error:       m_interface->SendError("Camera: Error"); break;
+        case CameraStatus::Disabled:    m_interface->SendStatus("Camera: disabled"); break;
+        case CameraStatus::Starting:    m_interface->SendStatus("Camera: starting"); break;
+        case CameraStatus::Calibrating: m_interface->SendStatus("Camera: calibrating"); break;
+        case CameraStatus::Ready:       m_interface->SendStatus("Camera: ready"); break;
+        case CameraStatus::Error:       m_interface->SendError("Camera: error"); break;
     }
 }
 
-void mtsPSMove::camera_start_if_needed_()
+
+void mtsPSMove::camera_start_if_needed()
 {   
     if (!m_move_handle || m_tracker_handle) return; 
     
@@ -516,7 +519,7 @@ void mtsPSMove::camera_start_if_needed_()
     if (tracker_count <= 0) {
         m_interface->SendWarning("Camera requested but no cameras detected. Continuing with orientation-only tracking.");
         m_camera_requested = false;  
-        camera_set_status_(CameraStatus::Disabled);
+        camera_set_status(CameraStatus::Disabled);
         return;
     }
 
@@ -524,19 +527,20 @@ void mtsPSMove::camera_start_if_needed_()
     if (!m_tracker_handle) {
         m_interface->SendWarning("Camera requested but tracker creation failed. Continuing with orientation-only tracking.");
         m_camera_requested = false;  
-        camera_set_status_(CameraStatus::Disabled);
+        camera_set_status(CameraStatus::Disabled);
         return;
     }
     
     // >>> disable LED rate limiting during calibration <<<
     psmove_set_rate_limiting(m_move_handle, 0);
 
-    camera_set_status_(CameraStatus::Starting);
+    camera_set_status(CameraStatus::Starting);
     // Kick calibration on next step
 }
 
+
 // Uses the tracker's actual image size to seed (cx, cy) once.
-void mtsPSMove::camera_init_image_center_from_tracker_()
+void mtsPSMove::camera_init_image_center_from_tracker()
 {
     if (!m_tracker_handle) { return; }
     int w = 0, h = 0;
@@ -550,9 +554,10 @@ void mtsPSMove::camera_init_image_center_from_tracker_()
     }
 }
 
+
 // Provides a one-time sensible default for fx, fy if the user never sets intrinsics.
 // used to scale X,Y from pixels to meters; Z comes from the tracker model.
-void mtsPSMove::camera_init_fx_fy_if_needed_(int width_px, [[maybe_unused]] int height_px)
+void mtsPSMove::camera_init_fx_fy_if_needed(int width_px, [[maybe_unused]] int height_px)
 {
     if (m_fx > 0.0 && m_fy > 0.0) return; // respect user-provided values
 
@@ -566,15 +571,16 @@ void mtsPSMove::camera_init_fx_fy_if_needed_(int width_px, [[maybe_unused]] int 
     if (!(m_fy > 0.0)) m_fy = fx_guess;
 }
 
-void mtsPSMove::camera_step_(double now_sec)
+
+void mtsPSMove::camera_step(double now_sec)
 {
     // Honor desired state
     if (!m_camera_requested) {
-        if (m_tracker_handle) camera_stop_();
+        if (m_tracker_handle) camera_stop();
         return;
     }
     if (!m_tracker_handle) {
-        camera_start_if_needed_();
+        camera_start_if_needed();
         return;
     }
 
@@ -582,14 +588,14 @@ void mtsPSMove::camera_step_(double now_sec)
     if (m_camera_status == CameraStatus::Starting) {
         auto st = psmove_tracker_enable(m_tracker_handle, m_move_handle);
         if (st == Tracker_CALIBRATED) {
-            camera_set_status_(CameraStatus::Ready);
+            camera_set_status(CameraStatus::Ready);
             // >>> re-enable rate limiting once Ready <<<
             psmove_set_rate_limiting(m_move_handle, 1);
             return;
         }
         m_cam_calib_start_sec = now_sec;
-        camera_set_status_(CameraStatus::Calibrating);
-        m_interface->SendStatus("Camera: Calibrating");
+        camera_set_status(CameraStatus::Calibrating);
+        m_interface->SendStatus("Camera: calibrating");
         return;
     }
 
@@ -598,22 +604,23 @@ void mtsPSMove::camera_step_(double now_sec)
         auto st = psmove_tracker_enable(m_tracker_handle, m_move_handle);
         if (st == Tracker_CALIBRATED) {
             // write a message that we are calibrated
-            m_interface->SendStatus("Camera: Calibrated");
-            camera_set_status_(CameraStatus::Ready);
+            m_interface->SendStatus("Camera: calibrated");
+            camera_set_status(CameraStatus::Ready);
             return;
         }
         if ((now_sec - m_cam_calib_start_sec) > m_cam_calib_timeout_sec) {
             // Camera calibration failed - warn user and disable camera functionality
             m_interface->SendWarning("Camera calibration timeout. Continuing with orientation-only tracking.");
             m_camera_requested = false;  // Disable further camera attempts
-            camera_stop_();
+            camera_stop();
             return;
         }
         return;
     }
 }
 
-void mtsPSMove::camera_stop_()
+
+void mtsPSMove::camera_stop(void)
 {
     if (m_tracker_handle) {
         psmove_tracker_free(m_tracker_handle);
@@ -623,7 +630,7 @@ void mtsPSMove::camera_stop_()
     if (m_move_handle) {
         psmove_set_rate_limiting(m_move_handle, 1);
     }
-    camera_set_status_(CameraStatus::Disabled);
+    camera_set_status(CameraStatus::Disabled);
     m_cam_last_enable_try_sec = 0.0;
     m_cam_calib_start_sec = 0.0;
 }
