@@ -386,7 +386,7 @@ void mtsPSMove::update_data(void)
             (qw*qw + qx*qx + qy*qy + qz*qz) > 1e-12;
 
         if (ok) {
-            m_measured_cp.Position().Rotation().FromNormalized(vctQuaternionRotation3(qw, qx, qy, qz));
+            m_measured_cp.Position().Rotation().FromNormalized(vctQuaternionRotation3(qx, qy, qz, qw));
             m_measured_cp.SetValid(true);
         } else {
             m_measured_cp.SetValid(false);
