@@ -84,6 +84,7 @@ protected:
     // Internals
     void initialize(void);
     void update_data(void);
+    void dispatch_operating_state(void);
     void state_command(const std::string & command);
 
     // ---- Camera state machine (internal) ----

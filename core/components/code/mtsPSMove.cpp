@@ -361,29 +361,6 @@ void mtsPSMove::initialize(void)
         m_interface->AddCommandWrite(&mtsPSMove::set_camera_rotation, this, "set_camera_rotation");
     }
 
-    // button interfaces
-    // mtsInterfaceProvided * button_interface;
-    // button_interface = AddInterfaceProvided(_controller_name + "/square");
-    // if (button_interface) {
-    //     button_interface->AddEventWrite(m_square_event, "Button", prmEventButton());
-    // }
-    // button_interface = AddInterfaceProvided(_controller_name + "/triangle");
-    // if (button_interface) {
-    //     button_interface->AddEventWrite(m_triangle_event, "Button", prmEventButton());
-    // }
-    // button_interface = AddInterfaceProvided(_controller_name + "/circle");
-    // if (button_interface) {
-    //     button_interface->AddEventWrite(m_circle_event, "Button", prmEventButton());
-    // }
-    // button_interface = AddInterfaceProvided(_controller_name + "/cross");
-    // if (button_interface) {
-    //     button_interface->AddEventWrite(m_cross_event, "Button", prmEventButton());
-    // }
-    // button_interface = AddInterfaceProvided(_controller_name + "/move");
-    // if (button_interface) {
-    //     button_interface->AddEventWrite(m_move_event, "Button", prmEventButton());
-    // }
-
     // Initial camera status
     camera_set_status(CameraStatus::Disabled);
 }
@@ -424,6 +401,31 @@ void mtsPSMove::Configure(const std::string & args)
         }
     }
 
+    // Add button interfaces
+    for (auto controller : m_controllers) {
+        const std::string _controller_name = controller->m_name;
+        mtsInterfaceProvided * button_interface;
+        button_interface = AddInterfaceProvided(_controller_name + "/square");
+        if (button_interface) {
+            button_interface->AddEventWrite(controller->m_square_event, "Button", prmEventButton());
+        }
+        button_interface = AddInterfaceProvided(_controller_name + "/triangle");
+        if (button_interface) {
+            button_interface->AddEventWrite(controller->m_triangle_event, "Button", prmEventButton());
+        }
+        button_interface = AddInterfaceProvided(_controller_name + "/circle");
+        if (button_interface) {
+            button_interface->AddEventWrite(controller->m_circle_event, "Button", prmEventButton());
+        }
+        button_interface = AddInterfaceProvided(_controller_name + "/cross");
+        if (button_interface) {
+            button_interface->AddEventWrite(controller->m_cross_event, "Button", prmEventButton());
+        }
+        button_interface = AddInterfaceProvided(_controller_name + "/move");
+        if (button_interface) {
+            button_interface->AddEventWrite(controller->m_move_event, "Button", prmEventButton());
+        }
+    }
 
     // TODO: Ignore this code for now. It is disabled by hardcoding m_camera_requested to false in the header.
     // Enable camera / tracking if requested
@@ -438,17 +440,12 @@ void mtsPSMove::Startup(void)
     m_interface->SendStatus("PSMove started");
 
     // honor requested camera state
-    if (m_camera_requested) {
-        camera_start_if_needed();
-    }
+    enable_camera(m_camera_requested);
 
-    // dummy state, should use state of PS controller
+    // dummy state
     m_operating_state.SetState(prmOperatingState::ENABLED);
     m_operating_state.SetIsHomed(true);
-    m_operating_state_event(m_operating_state);
-
-    
-
+    dispatch_operating_state();
 }
 
 
@@ -475,30 +472,39 @@ void mtsPSMove::get_controller_names(std::list<std::string> & controllers) const
 
 void mtsPSMove::state_command(const std::string & command)
 {
-    // std::string humanReadableMessage;
-    // prmOperatingState::StateType newOperatingState;
-    // try {
-    //     if (m_operating_state.ValidCommand(prmOperatingState::CommandTypeFromString(command),
-    //                                        newOperatingState, humanReadableMessage)) {
-    //         if (command == "enable") {
-    //             if (m_move_handle) {
-    //                 m_operating_state.SetState(prmOperatingState::ENABLED);
-    //             }
-    //         } else if (command == "disable") {
-    //         } else if (command == "home") {
-    //             m_operating_state.SetIsHomed(true);
-    //         } else if (command == "unhome") {
-    //             m_operating_state.SetIsHomed(false);
-    //         } else if (command == "pause") {
-    //         } else if (command == "resume") {
-    //         }
-    //     } else {
-    //         m_interface->SendWarning(this->GetName() + ": " + humanReadableMessage);
-    //     }
-    // } catch (std::runtime_error & e) {
-    //     m_interface->SendWarning(this->GetName() + ": " + command + " doesn't seem to be a valid state_command (" + e.what() + ")");
-    // }
-    // m_operating_state_event(m_operating_state);
+    std::string humanReadableMessage;
+    prmOperatingState::StateType newOperatingState;
+    try {
+        if (m_operating_state.ValidCommand(prmOperatingState::CommandTypeFromString(command),
+                                           newOperatingState, humanReadableMessage)) {
+            if (command == "enable") {
+                m_operating_state.SetState(prmOperatingState::ENABLED);
+            } else if (command == "disable") {
+                m_operating_state.SetState(prmOperatingState::DISABLED);
+            } else if (command == "home") {
+                m_operating_state.SetIsHomed(true);
+            } else if (command == "unhome") {
+                m_operating_state.SetIsHomed(false);
+            } else if (command == "pause") {
+            } else if (command == "resume") {
+            }
+        } else {
+            m_interface->SendWarning(this->GetName() + ": " + humanReadableMessage);
+        }
+    } catch (std::runtime_error & e) {
+        m_interface->SendWarning(this->GetName() + ": " + command + " doesn't seem to be a valid state_command (" + e.what() + ")");
+    }
+    dispatch_operating_state();
+}
+
+
+void mtsPSMove::dispatch_operating_state(void)
+{
+    // for now, consider operating state is for the whole system
+    m_operating_state_event(m_operating_state);
+    for (auto controller : m_controllers) {
+        controller->m_operating_state_event(m_operating_state);
+    }
 }
 
 
