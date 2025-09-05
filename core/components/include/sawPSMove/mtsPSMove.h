@@ -99,7 +99,7 @@ protected:
     PSMoveTracker * m_tracker_handle = nullptr;
 
     // Camera config
-    bool m_camera_requested = false;               // user's desired state
+    bool m_camera_requested = true;               // user's desired state
     CameraStatus m_camera_status = CameraStatus::Disabled;
     bool m_camera_have_pose = false;
     double m_fx = 0.0, m_fy = 0.0, m_cx = 0.0, m_cy = 0.0; // intrinsics

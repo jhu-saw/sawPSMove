@@ -90,7 +90,7 @@ public:
         }
 
         m_measured_cp.SetValid(false);
-        m_measured_cp.SetMovingFrame("psmove");
+        m_measured_cp.SetMovingFrame(m_name);
         m_measured_cp.SetReferenceFrame("world");
         m_measured_cp.SetTimestamp(0.0);
 
@@ -149,7 +149,6 @@ public:
 
     void update_data(void)
     {
-        // Poll
         if (psmove_poll(m_move_handle) == 0) {
             return;
         }
@@ -198,64 +197,64 @@ public:
             //         m_interface->SendStatus("Orientation reset via Cross button");
             //     }
             // }
-            
-            // Trigger & gripper
-            uint8_t trig = psmove_get_trigger(m_move_handle);
-            m_trigger = static_cast<double>(trig) / 255.0;
-            m_gripper_measured_js.Position().at(0) = m_trigger;
-            m_gripper_measured_js.SetValid(true);
-            
-            // Battery
-            PSMove_Battery_Level b = psmove_get_battery(m_move_handle);
-            int _new_battery;
-            switch (b) {
-            case Batt_MIN:       _new_battery = 5; break;
-            case Batt_20Percent: _new_battery = 20; break;
-            case Batt_40Percent: _new_battery = 40; break;
-            case Batt_60Percent: _new_battery = 60; break;
-            case Batt_80Percent: _new_battery = 80; break;
-            case Batt_MAX:       _new_battery = 100; break;
-            case Batt_CHARGING:  _new_battery = 99; break;
-            default:             _new_battery = 0;  break;
+        }
+        
+        // Trigger & gripper
+        uint8_t trig = psmove_get_trigger(m_move_handle);
+        m_trigger = static_cast<double>(trig) / 255.0;
+        m_gripper_measured_js.Position().at(0) = m_trigger;
+        m_gripper_measured_js.SetValid(true);
+        
+        // Battery
+        PSMove_Battery_Level b = psmove_get_battery(m_move_handle);
+        int _new_battery;
+        switch (b) {
+        case Batt_MIN:       _new_battery = 5; break;
+        case Batt_20Percent: _new_battery = 20; break;
+        case Batt_40Percent: _new_battery = 40; break;
+        case Batt_60Percent: _new_battery = 60; break;
+        case Batt_80Percent: _new_battery = 80; break;
+        case Batt_MAX:       _new_battery = 100; break;
+        case Batt_CHARGING:  _new_battery = 99; break;
+        default:             _new_battery = 0;  break;
+        }
+        if (_new_battery != m_battery) {
+            if (_new_battery == 99) {
+                m_interface->SendStatus(m_name + ": battery is charging");
+            } else {
+                m_interface->SendStatus(m_name + ": battery level is " + std::to_string(_new_battery) + "%");
             }
-            if (_new_battery != m_battery) {
-                if (_new_battery == 99) {
-                    m_interface->SendStatus(m_name + ": battery is charging");
-                } else {
-                    m_interface->SendStatus(m_name + ": battery level is " + std::to_string(_new_battery) + "%");
-                }
-            }
-            m_battery = _new_battery;
+        }
+        m_battery = _new_battery;
+        
+        // Raw IMU
+        float ax, ay, az, gx, gy, gz;
+        psmove_get_accelerometer_frame(m_move_handle, Frame_SecondHalf, &ax, &ay, &az);
+        psmove_get_gyroscope_frame(m_move_handle, Frame_SecondHalf, &gx, &gy, &gz);
+        m_accel.Assign(ax, ay, az);
+        m_gyro.Assign(gx, gy, gz);
+        
+        // Orientation → rotation matrix
+        // vctMatRot3 R;
+        if (m_orientation_available) {
+            float qw = 1.0f, qx = 0.0f, qy = 0.0f, qz = 0.0f;
+            // NOTE: In this API variant, psmove_get_orientation returns void.
+            //       We just call it and then sanity-check the result.
+            psmove_get_orientation(m_move_handle, &qw, &qx, &qy, &qz);
             
-            // Raw IMU
-            float ax, ay, az, gx, gy, gz;
-            psmove_get_accelerometer_frame(m_move_handle, Frame_SecondHalf, &ax, &ay, &az);
-            psmove_get_gyroscope_frame(m_move_handle, Frame_SecondHalf, &gx, &gy, &gz);
-            m_accel.Assign(ax, ay, az);
-            m_gyro.Assign(gx, gy, gz);
+            const bool ok =
+                std::isfinite(qw) && std::isfinite(qx) &&
+                std::isfinite(qy) && std::isfinite(qz) &&
+                (qw*qw + qx*qx + qy*qy + qz*qz) > 1e-12;
             
-            // Orientation → rotation matrix
-            // vctMatRot3 R;
-            if (m_orientation_available) {
-                float qw = 1.0f, qx = 0.0f, qy = 0.0f, qz = 0.0f;
-                // NOTE: In this API variant, psmove_get_orientation returns void.
-                //       We just call it and then sanity-check the result.
-                psmove_get_orientation(m_move_handle, &qw, &qx, &qy, &qz);
-                
-                const bool ok =
-                    std::isfinite(qw) && std::isfinite(qx) &&
-                    std::isfinite(qy) && std::isfinite(qz) &&
-                    (qw*qw + qx*qx + qy*qy + qz*qz) > 1e-12;
-                
-                if (ok) {
-                    m_measured_cp.Position().Rotation().FromNormalized(vctQuaternionRotation3(qx, qy, qz, qw));
-                    m_measured_cp.SetValid(true);
-                } else {
-                    m_measured_cp.SetValid(false);
-                }
+            if (ok) {
+                m_measured_cp.Position().Rotation().FromNormalized(vctQuaternionRotation3(qx, qy, qz, qw));
+                m_measured_cp.SetValid(true);
             } else {
                 m_measured_cp.SetValid(false);
             }
+        } else {
+            m_measured_cp.SetValid(false);
         }
     }
 
@@ -344,9 +343,8 @@ void mtsPSMove::initialize(void)
     // State table entries
     StateTable.AddData(m_operating_state, "operating_state");
 
-    const std::string _controller_name = "controller"; // ideally a loop for multiple controllers
     // Provided interface
-    m_interface = AddInterfaceProvided(_controller_name);
+    m_interface = AddInterfaceProvided("system");
     if (m_interface) {
         m_interface->AddMessageEvents();
         // CRTK-friendly command name
@@ -448,6 +446,9 @@ void mtsPSMove::Startup(void)
     m_operating_state.SetState(prmOperatingState::ENABLED);
     m_operating_state.SetIsHomed(true);
     m_operating_state_event(m_operating_state);
+
+    
+
 }
 
 
@@ -520,33 +521,36 @@ void mtsPSMove::update_data(void)
         psmove_tracker_update(m_tracker_handle, nullptr);
     }
 
-    // if (m_tracker_handle) {
-    //     float u = 0.f, v = 0.f, r = 0.f;
-    //     const int age_ms = psmove_tracker_get_position(m_tracker_handle, m_move_handle, &u, &v, &r);
-    //     const bool ok_px = std::isfinite(u) && std::isfinite(v) && std::isfinite(r) && (r > 1e-6f) && (age_ms >= 0);
+    if (m_tracker_handle) {
+        for (auto controller : m_controllers) {
+            auto & c_move_handle = controller->m_move_handle;
+            float u = 0.f, v = 0.f, r = 0.f;
+            const int age_ms = psmove_tracker_get_position(m_tracker_handle, c_move_handle, &u, &v, &r);
+            const bool ok_px = std::isfinite(u) && std::isfinite(v) && std::isfinite(r) && (r > 1e-6f) && (age_ms >= 0);
 
-    //     if (ok_px) {
-    //         // Seed (cx, cy) from the actual tracker image size once
-    //         camera_init_image_center_from_tracker();
-    //         const float dist_cm = psmove_tracker_distance_from_radius(m_tracker_handle, r);
-    //         const double Z = double(dist_cm) * 0.01; // convert cm -> meters
-    //         // provide a reasonable fx,fy once.
-    //         int w = 0, h = 0;
-    //         psmove_tracker_get_size(m_tracker_handle, &w, &h);
-    //         camera_init_fx_fy_if_needed(w, h);
+            if (ok_px) {
+                // Seed (cx, cy) from the actual tracker image size once
+                camera_init_image_center_from_tracker();
+                const float dist_cm = psmove_tracker_distance_from_radius(m_tracker_handle, r);
+                const double Z = double(dist_cm) * 0.01; // convert cm -> meters
+                // provide a reasonable fx,fy once.
+                int w = 0, h = 0;
+                psmove_tracker_get_size(m_tracker_handle, &w, &h);
+                camera_init_fx_fy_if_needed(w, h);
 
-    //         // Pinhole projection to get X,Y in meters (camera frame).
-    //         const double X = (double(u) - m_cx) * Z / m_fx;
-    //         const double Y = (double(v) - m_cy) * Z / m_fy;
+                // Pinhole projection to get X,Y in meters (camera frame).
+                const double X = (double(u) - m_cx) * Z / m_fx;
+                const double Y = (double(v) - m_cy) * Z / m_fy;
 
-    //         const vct3 p_cam(X, Y, Z);
-    //         const vct3 p_w = m_R_world_cam * p_cam + m_t_world_cam;
+                const vct3 p_cam(X, Y, Z);
+                const vct3 p_w = m_R_world_cam * p_cam + m_t_world_cam;
 
-    //         m_measured_cp.Position().Translation().Assign(p_w[0], p_w[1], p_w[2]);
-    //         m_measured_cp.SetValid(true);
-    //     }
-    //     // If not ok_px, we keep last translation to avoid output flicker on intermittent tracking.
-    // } else {
+                controller->m_measured_cp.Position().Translation().Assign(p_w[0], p_w[1], p_w[2]);
+            }
+        }
+        // If not ok_px, we keep last translation to avoid output flicker on intermittent tracking.
+    }
+    // else {
     //     // No tracker
     //     m_measured_cp.Position().Translation().Assign(0.0, 0.0, 0.0);
     // }
