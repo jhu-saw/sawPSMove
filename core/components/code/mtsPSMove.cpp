@@ -184,19 +184,21 @@ public:
                 m_move_value = _new_button;
             }
             
-            //     // buttons used to control mtsPSMove
-            //     _new_button = m_buttons & Btn_SELECT;
-            //     if (_new_button) {
-            //         m_camera_requested = !m_camera_requested;
-            //         enable_camera(m_camera_requested);
-            //         m_interface->SendStatus(m_camera_requested ? "Camera enabled via \"select\" button" : "Camera disabled via \"select\" button");
-            //     }
-            //     _new_button = m_buttons & Btn_START;
-            //     if (_new_button) {
-            //         reset_orientation();
-            //         m_interface->SendStatus("Orientation reset via Cross button");
-            //     }
-            // }
+            // buttons used to control mtsPSMove
+            _new_button = m_buttons & Btn_SELECT;
+            if (_new_button) {
+                auto & s_camera_requested = m_system->m_camera_requested;
+                s_camera_requested = !s_camera_requested;
+                m_system->enable_camera(s_camera_requested);
+                m_interface->SendStatus(m_name + ": camera "
+                                        + (s_camera_requested ? "enabled" : "disabled")
+                                        + " triggered by \"select\" button");
+            }
+            _new_button = m_buttons & Btn_START;
+            if (_new_button) {
+                reset_orientation();
+                m_interface->SendStatus(m_name + ": orientation reset triggered by \"start\" button");
+            }
         }
         
         // Trigger & gripper
