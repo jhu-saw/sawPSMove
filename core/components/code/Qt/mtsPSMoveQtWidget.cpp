@@ -40,19 +40,19 @@ mtsPSMoveQtWidget::mtsPSMoveQtWidget(const std::string &name, QWidget *parent):
     QMMessage = new mtsMessageQtWidget();
     QPOState = new prmOperatingStateQtWidget();
 
-    // Required interface to the device (OptoForce pattern)
-    m_device_interface = AddInterfaceRequired("device");
-    if (m_device_interface) {
-        QMMessage->SetInterfaceRequired(m_device_interface);
-        QPOState->SetInterfaceRequired(m_device_interface);
-        m_device_interface->AddFunction("measured_cp", device.measured_cp);
-        m_device_interface->AddFunction("get_buttons", device.get_buttons);
-        m_device_interface->AddFunction("trigger", device.trigger);
-        m_device_interface->AddFunction("battery", device.battery);
-        m_device_interface->AddFunction("set_LED", device.set_LED);
-        m_device_interface->AddFunction("rumble", device.rumble);
-        m_device_interface->AddFunction("reset_orientation", device.reset_orientation);
-        m_device_interface->AddFunction("period_statistics", device.period_statistics);
+    // Required interface to the controller (OptoForce pattern)
+    m_controller_interface = AddInterfaceRequired("controller");
+    if (m_controller_interface) {
+        QMMessage->SetInterfaceRequired(m_controller_interface);
+        QPOState->SetInterfaceRequired(m_controller_interface);
+        m_controller_interface->AddFunction("measured_cp", controller.measured_cp);
+        m_controller_interface->AddFunction("get_buttons", controller.get_buttons);
+        m_controller_interface->AddFunction("trigger", controller.trigger);
+        m_controller_interface->AddFunction("battery", controller.battery);
+        m_controller_interface->AddFunction("set_LED", controller.set_LED);
+        m_controller_interface->AddFunction("rumble", controller.rumble);
+        m_controller_interface->AddFunction("reset_orientation", controller.reset_orientation);
+        m_controller_interface->AddFunction("period_statistics", controller.period_statistics);
     }
 
     auto *layout = new QGridLayout(this);
@@ -124,25 +124,25 @@ void mtsPSMoveQtWidget::Cleanup(void)
 void mtsPSMoveQtWidget::OnTimer()
 {
     prmPositionCartesianGet cp;
-    if (device.measured_cp(cp).IsOK()) {
+    if (controller.measured_cp(cp).IsOK()) {
         QPCGWidget->SetValue(cp);
     }
 
     unsigned int btn = 0;
-    if (device.get_buttons(btn).IsOK()) {
+    if (controller.get_buttons(btn).IsOK()) {
         Buttons->setText(QString("buttons=0x%1").arg(QString::number(btn, 16).rightJustified(8, '0')));
     }
     double trig = 0.0;
-    if (device.trigger(trig).IsOK()) {
+    if (controller.trigger(trig).IsOK()) {
         Trigger->setText(QString("trigger=%1").arg(trig, 0, 'f', 2));
     }
     int bat = 0.0;
-    if (device.battery(bat).IsOK()) {
+    if (controller.battery(bat).IsOK()) {
         Battery->setText(QString("battery=%1").arg(bat));
     }
 
     mtsIntervalStatistics _stats;
-    device.period_statistics(_stats);
+    controller.period_statistics(_stats);
     QMIntervalStatistics->SetValue(_stats);
 
 }
@@ -151,17 +151,17 @@ void mtsPSMoveQtWidget::OnTimer()
 void mtsPSMoveQtWidget::OnSetLED()
 {
     vctDouble3 rgb(LED_R->value(), LED_G->value(), LED_B->value());
-    device.set_LED(rgb);
+    controller.set_LED(rgb);
 }
 
 
 void mtsPSMoveQtWidget::OnRumbleChanged(double v)
 {
-    device.rumble(v);
+    controller.rumble(v);
 }
 
 
 void mtsPSMoveQtWidget::OnResetOrientation()
 {
-    device.reset_orientation();
+    controller.reset_orientation();
 }

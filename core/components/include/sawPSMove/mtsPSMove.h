@@ -45,7 +45,7 @@ class CISST_EXPORT mtsPSMove: public mtsTaskPeriodic
 public:
 
     // Default: discover controller 0
-    explicit mtsPSMove(const std::string & component_name, const double & period_in_seconds = 0.03);
+    explicit mtsPSMove(const std::string & component_name, const double & period_in_seconds = 0.001);
 
     inline mtsPSMove(const mtsTaskPeriodicConstructorArg & arg):
         mtsTaskPeriodic(arg) {
@@ -62,6 +62,8 @@ public:
     void Startup(void) override;
     void Run(void) override;
     void Cleanup(void) override;
+
+    void get_controller_names(std::list<std::string> & controllers) const;
 
     enum class CameraStatus {
         Disabled,
@@ -97,7 +99,7 @@ protected:
     PSMoveTracker * m_tracker_handle = nullptr;
 
     // Camera config
-    bool m_camera_requested = true;                // user's desired state
+    bool m_camera_requested = false;               // user's desired state
     CameraStatus m_camera_status = CameraStatus::Disabled;
     bool m_camera_have_pose = false;
     double m_fx = 0.0, m_fy = 0.0, m_cx = 0.0, m_cy = 0.0; // intrinsics
@@ -114,11 +116,6 @@ protected:
 
     // Provided interface
     mtsInterfaceProvided * m_interface = nullptr;
-
-    struct {
-        prmEventButton pressed;
-        prmEventButton released;
-    } m_event_payloads;
 
     // all controllers
     std::list<mtsPSMoveController *> m_controllers;

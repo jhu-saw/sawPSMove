@@ -76,7 +76,7 @@ if (cisst_FOUND_AS_REQUIRED)
 
     link_directories (${sawPSMove_LIBRARY_DIR})
 
-    add_executable (ps_move src/psmove.cpp)
+    add_executable (ps_move src/ps_move.cpp)
     target_link_libraries (ps_move
       ${sawPSMove_LIBRARIES}
       ${catkin_LIBRARIES})

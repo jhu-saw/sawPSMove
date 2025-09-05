@@ -46,12 +46,14 @@ public:
                         PSMove * move_handle,
                         int index,
                         const std::string & name,
+                        const std::string & serial,
                         mtsInterfaceProvided * interface_provided,
                         mtsStateTable * state_table):
         m_system(system),
         m_move_handle(move_handle),
         m_index(index),
         m_name(name),
+        m_serial(serial),
         m_interface(interface_provided),
         m_state_table(state_table)
     {
@@ -135,6 +137,129 @@ public:
     }
 
 
+    void destruct(void)
+    {
+        psmove_set_rumble(m_move_handle, 0);
+        psmove_set_leds(m_move_handle, 0, 0, 0);
+        psmove_update_leds(m_move_handle);
+        psmove_disconnect(m_move_handle);
+        m_move_handle = nullptr;
+    }
+
+
+    void update_data(void)
+    {
+        // Poll
+        if (psmove_poll(m_move_handle) == 0) {
+            return;
+        }
+        
+        // Buttons
+        unsigned int _new_buttons = psmove_get_buttons(m_move_handle);
+        if (_new_buttons != m_buttons) {
+            m_buttons = _new_buttons;
+            bool _new_button;
+            _new_button = m_buttons & Btn_SQUARE;
+            if (_new_button != m_square_value) {
+                m_square_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                m_square_value = _new_button;
+            }
+            _new_button = m_buttons & Btn_TRIANGLE;
+            if (_new_button != m_triangle_value) {
+                m_triangle_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                m_triangle_value = _new_button;
+            }
+            _new_button = m_buttons & Btn_CIRCLE;
+            if (_new_button != m_circle_value) {
+                m_circle_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                m_circle_value = _new_button;
+            }
+            _new_button = m_buttons & Btn_CROSS;
+            if (_new_button != m_cross_value) {
+                m_cross_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                m_cross_value = _new_button;
+            }
+            _new_button = m_buttons & Btn_MOVE;
+            if (_new_button != m_move_value) {
+                m_move_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                m_move_value = _new_button;
+            }
+            
+            //     // buttons used to control mtsPSMove
+            //     _new_button = m_buttons & Btn_SELECT;
+            //     if (_new_button) {
+            //         m_camera_requested = !m_camera_requested;
+            //         enable_camera(m_camera_requested);
+            //         m_interface->SendStatus(m_camera_requested ? "Camera enabled via \"select\" button" : "Camera disabled via \"select\" button");
+            //     }
+            //     _new_button = m_buttons & Btn_START;
+            //     if (_new_button) {
+            //         reset_orientation();
+            //         m_interface->SendStatus("Orientation reset via Cross button");
+            //     }
+            // }
+            
+            // Trigger & gripper
+            uint8_t trig = psmove_get_trigger(m_move_handle);
+            m_trigger = static_cast<double>(trig) / 255.0;
+            m_gripper_measured_js.Position().at(0) = m_trigger;
+            m_gripper_measured_js.SetValid(true);
+            
+            // Battery
+            PSMove_Battery_Level b = psmove_get_battery(m_move_handle);
+            int _new_battery;
+            switch (b) {
+            case Batt_MIN:       _new_battery = 5; break;
+            case Batt_20Percent: _new_battery = 20; break;
+            case Batt_40Percent: _new_battery = 40; break;
+            case Batt_60Percent: _new_battery = 60; break;
+            case Batt_80Percent: _new_battery = 80; break;
+            case Batt_MAX:       _new_battery = 100; break;
+            case Batt_CHARGING:  _new_battery = 99; break;
+            default:             _new_battery = 0;  break;
+            }
+            if (_new_battery != m_battery) {
+                if (_new_battery == 99) {
+                    m_interface->SendStatus(m_name + ": battery is charging");
+                } else {
+                    m_interface->SendStatus(m_name + ": battery level is " + std::to_string(_new_battery) + "%");
+                }
+            }
+            m_battery = _new_battery;
+            
+            // Raw IMU
+            float ax, ay, az, gx, gy, gz;
+            psmove_get_accelerometer_frame(m_move_handle, Frame_SecondHalf, &ax, &ay, &az);
+            psmove_get_gyroscope_frame(m_move_handle, Frame_SecondHalf, &gx, &gy, &gz);
+            m_accel.Assign(ax, ay, az);
+            m_gyro.Assign(gx, gy, gz);
+            
+            // Orientation → rotation matrix
+            // vctMatRot3 R;
+            if (m_orientation_available) {
+                float qw = 1.0f, qx = 0.0f, qy = 0.0f, qz = 0.0f;
+                // NOTE: In this API variant, psmove_get_orientation returns void.
+                //       We just call it and then sanity-check the result.
+                psmove_get_orientation(m_move_handle, &qw, &qx, &qy, &qz);
+                
+                const bool ok =
+                    std::isfinite(qw) && std::isfinite(qx) &&
+                    std::isfinite(qy) && std::isfinite(qz) &&
+                    (qw*qw + qx*qx + qy*qy + qz*qz) > 1e-12;
+                
+                if (ok) {
+                    m_measured_cp.Position().Rotation().FromNormalized(vctQuaternionRotation3(qx, qy, qz, qw));
+                    m_measured_cp.SetValid(true);
+                } else {
+                    m_measured_cp.SetValid(false);
+                }
+            } else {
+                m_measured_cp.SetValid(false);
+            }
+        }
+    }
+
+
     void set_LED(const vctDouble3 & rgb)
     {
         if (!m_move_handle) {
@@ -172,6 +297,7 @@ public:
     PSMove * m_move_handle = nullptr;
     int m_index = -1;
     std::string m_name;
+    std::string m_serial;
     mtsInterfaceProvided * m_interface = nullptr;
     mtsStateTable * m_state_table = nullptr;
 
@@ -214,12 +340,6 @@ void mtsPSMove::initialize(void)
 
     m_R_world_cam.Assign(vctMatRot3::Identity());
     m_t_world_cam.Assign(0.0, 0.0, 0.0);
-
-    // predefined payloads
-    m_event_payloads.pressed.SetType(prmEventButton::PRESSED);
-    m_event_payloads.pressed.SetValid(true);
-    m_event_payloads.released.SetType(prmEventButton::RELEASED);
-    m_event_payloads.released.SetValid(true);
 
     // State table entries
     StateTable.AddData(m_operating_state, "operating_state");
@@ -273,13 +393,8 @@ void mtsPSMove::initialize(void)
 
 mtsPSMove::~mtsPSMove()
 {
-    for (auto & controller : m_controllers) {
-        auto & move_handle = controller->m_move_handle;
-        psmove_set_rumble(move_handle, 0);
-        psmove_set_leds(move_handle, 0, 0, 0);
-        psmove_update_leds(move_handle);
-        psmove_disconnect(move_handle);
-        move_handle = nullptr;
+    for (auto controller : m_controllers) {
+        controller->destruct();
     }
     camera_stop();
 }
@@ -297,11 +412,16 @@ void mtsPSMove::Configure(const std::string & args)
         if (!_move_handle) {
             CMN_LOG_CLASS_INIT_ERROR << "Failed to connect controller #" << index << std::endl;
         } else {
+            char *serial = psmove_get_serial(_move_handle);
+            std::string _serial(serial);
+            psmove_free_mem(serial);
             std::string name = "controller" + std::to_string(index + 1);
             mtsInterfaceProvided * _interface = AddInterfaceProvided(name);
             mtsStateTable * _state_table = new mtsStateTable(500, name);
             this->AddStateTable(_state_table);
-            auto _new_controller = new mtsPSMoveController(this, _move_handle, index, name, _interface, _state_table);
+            std::cerr << "---------- new: " << name << " " << _serial << std::endl;
+            auto _new_controller = new mtsPSMoveController(this, _move_handle, index, name, _serial,
+                                                           _interface, _state_table);
             m_controllers.push_back(_new_controller);
         }
     }
@@ -334,34 +454,21 @@ void mtsPSMove::Startup(void)
 void mtsPSMove::Run(void)
 {
     ProcessQueuedCommands();
-
-    // Drive camera state machine
-    const double now = osaGetTime();
-    camera_step(now);
-
-    // // if (!m_move_handle) {
-    // //     m_measured_cp.SetValid(false);
-    // //     m_gripper_measured_js.SetValid(false);
-    // //     return;
-    // // }
-
-    // // if (m_tracker_handle &&
-    // //     (m_camera_status == CameraStatus::Calibrating ||
-    // //      m_camera_status == CameraStatus::Ready)) {
-    // //     psmove_tracker_update_image(m_tracker_handle);
-    // //     psmove_tracker_update(m_tracker_handle, nullptr);
-    // // }
-
-    // // // poll all pending samples
-    // // while (psmove_poll(m_move_handle)) {
-    // //     update_data();
-    // // }
+    update_data();
 }
 
 
 void mtsPSMove::Cleanup(void)
 {
     // handled in destructor
+}
+
+
+void mtsPSMove::get_controller_names(std::list<std::string> & controllers) const
+{
+    for (auto & controller : m_controllers) {
+        controllers.push_back(controller->m_name);
+    }
 }
 
 
@@ -396,108 +503,22 @@ void mtsPSMove::state_command(const std::string & command)
 
 void mtsPSMove::update_data(void)
 {
-    // // Buttons
-    // unsigned int _new_buttons = psmove_get_buttons(m_move_handle);
-    // if (_new_buttons != m_buttons) {
-    //     m_buttons = _new_buttons;
-    //     bool _new_button;
-    //     _new_button = m_buttons & Btn_SQUARE;
-    //     if (_new_button != m_square_value) {
-    //         m_square_event(_new_button ? m_event_payloads.pressed : m_event_payloads.released);
-    //         m_square_value = _new_button;
-    //     }
-    //     _new_button = m_buttons & Btn_TRIANGLE;
-    //     if (_new_button != m_triangle_value) {
-    //         m_triangle_event(_new_button ? m_event_payloads.pressed : m_event_payloads.released);
-    //         m_triangle_value = _new_button;
-    //     }
-    //     _new_button = m_buttons & Btn_CIRCLE;
-    //     if (_new_button != m_circle_value) {
-    //         m_circle_event(_new_button ? m_event_payloads.pressed : m_event_payloads.released);
-    //         m_circle_value = _new_button;
-    //     }
-    //     _new_button = m_buttons & Btn_CROSS;
-    //     if (_new_button != m_cross_value) {
-    //         m_cross_event(_new_button ? m_event_payloads.pressed : m_event_payloads.released);
-    //         m_cross_value = _new_button;
-    //     }
-    //     _new_button = m_buttons & Btn_MOVE;
-    //     if (_new_button != m_move_value) {
-    //         m_move_event(_new_button ? m_event_payloads.pressed : m_event_payloads.released);
-    //         m_move_value = _new_button;
-    //     }
+    for (auto controller : m_controllers) {
+        controller->update_data();
+    }
 
-    //     // buttons used to control mtsPSMove
-    //     _new_button = m_buttons & Btn_SELECT;
-    //     if (_new_button) {
-    //         m_camera_requested = !m_camera_requested;
-    //         enable_camera(m_camera_requested);
-    //         m_interface->SendStatus(m_camera_requested ? "Camera enabled via \"select\" button" : "Camera disabled via \"select\" button");
-    //     }
-    //     _new_button = m_buttons & Btn_START;
-    //     if (_new_button) {
-    //         reset_orientation();
-    //         m_interface->SendStatus("Orientation reset via Cross button");
-    //     }
-    // }
+    return;
+    
+    // Drive camera state machine
+    const double now = osaGetTime();
+    camera_step(now);
 
-    // // Trigger & gripper
-    // uint8_t trig = psmove_get_trigger(m_move_handle);
-    // m_trigger = static_cast<double>(trig) / 255.0;
-    // m_gripper_measured_js.Position().at(0) = m_trigger;
-    // m_gripper_measured_js.SetValid(true);
-
-    // // Battery
-    // PSMove_Battery_Level b = psmove_get_battery(m_move_handle);
-    // int _new_battery;
-    // switch (b) {
-    //     case Batt_MIN:       _new_battery = 5; break;
-    //     case Batt_20Percent: _new_battery = 20; break;
-    //     case Batt_40Percent: _new_battery = 40; break;
-    //     case Batt_60Percent: _new_battery = 60; break;
-    //     case Batt_80Percent: _new_battery = 80; break;
-    //     case Batt_MAX:       _new_battery = 100; break;
-    //     case Batt_CHARGING:  _new_battery = 99; break;
-    //     default:             _new_battery = 0;  break;
-    // }
-    // if (_new_battery != m_battery) {
-    //     if (_new_battery == 99) {
-    //         m_interface->SendStatus("Battery is charging");
-    //     } else {
-    //         m_interface->SendStatus("Battery level is " + std::to_string(_new_battery) + "%");
-    //     }
-    // }
-    // m_battery = _new_battery;
-
-    // // Raw IMU
-    // float ax, ay, az, gx, gy, gz;
-    // psmove_get_accelerometer_frame(m_move_handle, Frame_SecondHalf, &ax, &ay, &az);
-    // psmove_get_gyroscope_frame(m_move_handle, Frame_SecondHalf, &gx, &gy, &gz);
-    // m_accel.Assign(ax, ay, az);
-    // m_gyro.Assign(gx, gy, gz);
-
-    // // Orientation → rotation matrix
-    // // vctMatRot3 R;
-    // if (m_orientation_available) {
-    //     float qw = 1.0f, qx = 0.0f, qy = 0.0f, qz = 0.0f;
-    //     // NOTE: In this API variant, psmove_get_orientation returns void.
-    //     //       We just call it and then sanity-check the result.
-    //     psmove_get_orientation(m_move_handle, &qw, &qx, &qy, &qz);
-
-    //     const bool ok =
-    //         std::isfinite(qw) && std::isfinite(qx) &&
-    //         std::isfinite(qy) && std::isfinite(qz) &&
-    //         (qw*qw + qx*qx + qy*qy + qz*qz) > 1e-12;
-
-    //     if (ok) {
-    //         m_measured_cp.Position().Rotation().FromNormalized(vctQuaternionRotation3(qw, qx, qy, qz));
-    //         m_measured_cp.SetValid(true);
-    //     } else {
-    //         m_measured_cp.SetValid(false);
-    //     }
-    // } else {
-    //     m_measured_cp.SetValid(false);
-    // }
+    if (m_tracker_handle &&
+        (m_camera_status == CameraStatus::Calibrating ||
+         m_camera_status == CameraStatus::Ready)) {
+        psmove_tracker_update_image(m_tracker_handle);
+        psmove_tracker_update(m_tracker_handle, nullptr);
+    }
 
     // if (m_tracker_handle) {
     //     float u = 0.f, v = 0.f, r = 0.f;

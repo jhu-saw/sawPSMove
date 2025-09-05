@@ -61,7 +61,7 @@ private Q_SLOTS:
 
 private:
 
-    mtsInterfaceRequired * m_device_interface = nullptr;
+    mtsInterfaceRequired * m_controller_interface = nullptr;
 
 	struct {
         mtsFunctionRead period_statistics;
@@ -72,7 +72,7 @@ private:
         mtsFunctionWrite set_LED;
         mtsFunctionWrite rumble;
         mtsFunctionVoid  reset_orientation;
-	} device;
+	} controller;
 
     // UI
     QTimer *Timer{nullptr};

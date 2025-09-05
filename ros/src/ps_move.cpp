@@ -93,17 +93,17 @@ int main(int argc, char * argv[])
 
     // organize all widgets in a tab widget
     QTabWidget * tab_widget = new QTabWidget;
-    mtsPSMoveQtWidget * device_widget;
+    mtsPSMoveQtWidget * controller_widget;
 
     // Qt Widget(s)
-    std::list<std::string> devices = {"controller"};
-    // ps_move->get_device_names(devices);
-    for (const auto & device : devices) {
-        device_widget = new mtsPSMoveQtWidget(device + "-gui");
-        component_manager->AddComponent(device_widget);
-        component_manager->Connect(device_widget->GetName(), "device",
-                                   ps_move->GetName(), device);
-        tab_widget->addTab(device_widget, device.c_str());
+    std::list<std::string> controllers;
+    ps_move->get_controller_names(controllers);
+    for (const auto & controller : controllers) {
+        controller_widget = new mtsPSMoveQtWidget(controller + "-gui");
+        component_manager->AddComponent(controller_widget);
+        component_manager->Connect(controller_widget->GetName(), "controller",
+                                   ps_move->GetName(), controller);
+        tab_widget->addTab(controller_widget, controller.c_str());
     }
 
     crtk_bridge->bridge_all_interfaces_provided(ps_move->GetName(), "",
