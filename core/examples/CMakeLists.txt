@@ -13,14 +13,16 @@ cmake_minimum_required (VERSION 3.10)
 project (sawPSMoveExamples VERSION 2.1.0)
 
 # create a list of required cisst libraries
-set (REQUIRED_CISST_LIBRARIES cisstCommon
-                              cisstCommonQt
-                              cisstVector
-                              cisstVectorQt
-                              cisstOSAbstraction
-                              cisstMultiTask
-                              cisstMultiTaskQt
-                              cisstParameterTypes)
+set (REQUIRED_CISST_LIBRARIES
+  cisstCommon
+  cisstCommonQt
+  cisstVector
+  cisstVectorQt
+  cisstOSAbstraction
+  cisstMultiTask
+  cisstMultiTaskQt
+  cisstParameterTypes
+  cisstParameterTypesQt)
 
 # find cisst and make sure the required libraries have been compiled
 find_package (cisst 1.2.0 REQUIRED ${REQUIRED_CISST_LIBRARIES})

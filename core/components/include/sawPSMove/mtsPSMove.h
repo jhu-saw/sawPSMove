@@ -25,6 +25,7 @@ http://www.cisst.org/cisst/license.txt.
 #include <cisstVector/vctFixedSizeVectorTypes.h>
 #include <cisstParameterTypes/prmOperatingState.h>
 #include <cisstParameterTypes/prmPositionCartesianGet.h>
+#include <cisstParameterTypes/prmPositionCartesianArrayGet.h>
 #include <cisstParameterTypes/prmStateJoint.h>
 #include <cisstParameterTypes/prmEventButton.h>
 
@@ -45,7 +46,7 @@ class CISST_EXPORT mtsPSMove: public mtsTaskPeriodic
 public:
 
     // Default: discover controller 0
-    explicit mtsPSMove(const std::string & component_name, const double & period_in_seconds = 0.001);
+    explicit mtsPSMove(const std::string & component_name, const double & period_in_seconds = 0.01);
 
     inline mtsPSMove(const mtsTaskPeriodicConstructorArg & arg):
         mtsTaskPeriodic(arg) {
@@ -120,6 +121,10 @@ protected:
 
     // all controllers
     std::list<mtsPSMoveController *> m_controllers;
+
+    // all positions
+    prmPositionCartesianArrayGet m_measured_cp_array;
+
 };
 
 CMN_DECLARE_SERVICES_INSTANTIATION(mtsPSMove);

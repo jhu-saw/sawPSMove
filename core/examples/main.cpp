@@ -21,6 +21,8 @@ http://www.cisst.org/cisst/license.txt.
 #include <cisstCommon/cmnQt.h>
 #include <cisstMultiTask/mtsTaskManager.h>
 #include <sawPSMove/mtsPSMove.h>
+
+#include <cisstParameterTypes/prmPositionCartesianArrayGetQtWidget.h>
 #include <sawPSMove/mtsPSMoveQtWidget.h>
 
 #include <QApplication>
@@ -72,9 +74,9 @@ int main(int argc, char * argv[])
     if (options.IsSet("dark-mode")) {
         cmnQt::SetDarkMode();
     }
-        
+
     // organize all widgets in a tab widget
-    QTabWidget * tab_widget = new QTabWidget;
+    auto * tab_widget = new QTabWidget;
     mtsPSMoveQtWidget * controller_widget;
 
     // Qt Widget(s)
@@ -87,6 +89,13 @@ int main(int argc, char * argv[])
                                    ps_move->GetName(), controller);
         tab_widget->addTab(controller_widget, controller.c_str());
     }
+
+    // overview
+    auto * all_poses_widget = new prmPositionCartesianArrayGetQtWidget("all-poses-gui");
+    component_manager->AddComponent(all_poses_widget);
+    component_manager->Connect(all_poses_widget->GetName(), "Controller",
+                               ps_move->GetName(), "system");
+    tab_widget->addTab(all_poses_widget, "Overview");
 
     // custom user components
     if (!component_manager->ConfigureJSON(manager_config)) {

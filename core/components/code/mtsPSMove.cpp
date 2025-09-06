@@ -137,6 +137,12 @@ public:
     }
 
 
+    void startup(void)
+    {
+        m_interface->SendStatus(m_name + ": serial number " + m_serial);
+    }
+
+
     void destruct(void)
     {
         psmove_set_rumble(m_move_handle, 0);
@@ -149,114 +155,113 @@ public:
 
     void update_data(void)
     {
-        if (psmove_poll(m_move_handle) == 0) {
-            return;
-        }
-        
-        // Buttons
-        unsigned int _new_buttons = psmove_get_buttons(m_move_handle);
-        if (_new_buttons != m_buttons) {
-            m_buttons = _new_buttons;
-            bool _new_button;
-            _new_button = m_buttons & Btn_SQUARE;
-            if (_new_button != m_square_value) {
-                m_square_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
-                m_square_value = _new_button;
+        while (psmove_poll(m_move_handle)) {
+
+            // Buttons
+            unsigned int _new_buttons = psmove_get_buttons(m_move_handle);
+            if (_new_buttons != m_buttons) {
+                m_buttons = _new_buttons;
+                bool _new_button;
+                _new_button = m_buttons & Btn_SQUARE;
+                if (_new_button != m_square_value) {
+                    m_square_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                    m_square_value = _new_button;
+                }
+                _new_button = m_buttons & Btn_TRIANGLE;
+                if (_new_button != m_triangle_value) {
+                    m_triangle_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                    m_triangle_value = _new_button;
+                }
+                _new_button = m_buttons & Btn_CIRCLE;
+                if (_new_button != m_circle_value) {
+                    m_circle_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                    m_circle_value = _new_button;
+                }
+                _new_button = m_buttons & Btn_CROSS;
+                if (_new_button != m_cross_value) {
+                    m_cross_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                    m_cross_value = _new_button;
+                }
+                _new_button = m_buttons & Btn_MOVE;
+                if (_new_button != m_move_value) {
+                    m_move_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                    m_move_value = _new_button;
+                }
+
+                // buttons used to control mtsPSMove
+                _new_button = m_buttons & Btn_SELECT;
+                if (_new_button) {
+                    auto & s_camera_requested = m_system->m_camera_requested;
+                    s_camera_requested = !s_camera_requested;
+                    m_system->enable_camera(s_camera_requested);
+                    m_interface->SendStatus(m_name + ": camera "
+                                            + (s_camera_requested ? "enabled" : "disabled")
+                                            + " triggered by \"select\" button");
+                }
+                _new_button = m_buttons & Btn_START;
+                if (_new_button) {
+                    reset_orientation();
+                    m_interface->SendStatus(m_name + ": orientation reset triggered by \"start\" button");
+                }
             }
-            _new_button = m_buttons & Btn_TRIANGLE;
-            if (_new_button != m_triangle_value) {
-                m_triangle_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
-                m_triangle_value = _new_button;
+
+            // Trigger & gripper
+            uint8_t trig = psmove_get_trigger(m_move_handle);
+            m_trigger = static_cast<double>(trig) / 255.0;
+            m_gripper_measured_js.Position().at(0) = m_trigger;
+            m_gripper_measured_js.SetValid(true);
+
+            // Battery
+            PSMove_Battery_Level b = psmove_get_battery(m_move_handle);
+            int _new_battery;
+            switch (b) {
+            case Batt_MIN:       _new_battery = 5; break;
+            case Batt_20Percent: _new_battery = 20; break;
+            case Batt_40Percent: _new_battery = 40; break;
+            case Batt_60Percent: _new_battery = 60; break;
+            case Batt_80Percent: _new_battery = 80; break;
+            case Batt_MAX:       _new_battery = 100; break;
+            case Batt_CHARGING:  _new_battery = 99; break;
+            default:             _new_battery = 0;  break;
             }
-            _new_button = m_buttons & Btn_CIRCLE;
-            if (_new_button != m_circle_value) {
-                m_circle_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
-                m_circle_value = _new_button;
+            if (_new_battery != m_battery) {
+                if (_new_battery == 99) {
+                    m_interface->SendStatus(m_name + ": battery is charging");
+                } else {
+                    m_interface->SendStatus(m_name + ": battery level is " + std::to_string(_new_battery) + "%");
+                }
             }
-            _new_button = m_buttons & Btn_CROSS;
-            if (_new_button != m_cross_value) {
-                m_cross_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
-                m_cross_value = _new_button;
-            }
-            _new_button = m_buttons & Btn_MOVE;
-            if (_new_button != m_move_value) {
-                m_move_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
-                m_move_value = _new_button;
-            }
-            
-            // buttons used to control mtsPSMove
-            _new_button = m_buttons & Btn_SELECT;
-            if (_new_button) {
-                auto & s_camera_requested = m_system->m_camera_requested;
-                s_camera_requested = !s_camera_requested;
-                m_system->enable_camera(s_camera_requested);
-                m_interface->SendStatus(m_name + ": camera "
-                                        + (s_camera_requested ? "enabled" : "disabled")
-                                        + " triggered by \"select\" button");
-            }
-            _new_button = m_buttons & Btn_START;
-            if (_new_button) {
-                reset_orientation();
-                m_interface->SendStatus(m_name + ": orientation reset triggered by \"start\" button");
-            }
-        }
-        
-        // Trigger & gripper
-        uint8_t trig = psmove_get_trigger(m_move_handle);
-        m_trigger = static_cast<double>(trig) / 255.0;
-        m_gripper_measured_js.Position().at(0) = m_trigger;
-        m_gripper_measured_js.SetValid(true);
-        
-        // Battery
-        PSMove_Battery_Level b = psmove_get_battery(m_move_handle);
-        int _new_battery;
-        switch (b) {
-        case Batt_MIN:       _new_battery = 5; break;
-        case Batt_20Percent: _new_battery = 20; break;
-        case Batt_40Percent: _new_battery = 40; break;
-        case Batt_60Percent: _new_battery = 60; break;
-        case Batt_80Percent: _new_battery = 80; break;
-        case Batt_MAX:       _new_battery = 100; break;
-        case Batt_CHARGING:  _new_battery = 99; break;
-        default:             _new_battery = 0;  break;
-        }
-        if (_new_battery != m_battery) {
-            if (_new_battery == 99) {
-                m_interface->SendStatus(m_name + ": battery is charging");
-            } else {
-                m_interface->SendStatus(m_name + ": battery level is " + std::to_string(_new_battery) + "%");
-            }
-        }
-        m_battery = _new_battery;
-        
-        // Raw IMU
-        float ax, ay, az, gx, gy, gz;
-        psmove_get_accelerometer_frame(m_move_handle, Frame_SecondHalf, &ax, &ay, &az);
-        psmove_get_gyroscope_frame(m_move_handle, Frame_SecondHalf, &gx, &gy, &gz);
-        m_accel.Assign(ax, ay, az);
-        m_gyro.Assign(gx, gy, gz);
-        
-        // Orientation → rotation matrix
-        // vctMatRot3 R;
-        if (m_orientation_available) {
-            float qw = 1.0f, qx = 0.0f, qy = 0.0f, qz = 0.0f;
-            // NOTE: In this API variant, psmove_get_orientation returns void.
-            //       We just call it and then sanity-check the result.
-            psmove_get_orientation(m_move_handle, &qw, &qx, &qy, &qz);
-            
-            const bool ok =
-                std::isfinite(qw) && std::isfinite(qx) &&
-                std::isfinite(qy) && std::isfinite(qz) &&
-                (qw*qw + qx*qx + qy*qy + qz*qz) > 1e-12;
-            
-            if (ok) {
-                m_measured_cp.Position().Rotation().FromNormalized(vctQuaternionRotation3(qx, qy, qz, qw));
-                m_measured_cp.SetValid(true);
+            m_battery = _new_battery;
+
+            // Raw IMU
+            float ax, ay, az, gx, gy, gz;
+            psmove_get_accelerometer_frame(m_move_handle, Frame_SecondHalf, &ax, &ay, &az);
+            psmove_get_gyroscope_frame(m_move_handle, Frame_SecondHalf, &gx, &gy, &gz);
+            m_accel.Assign(ax, ay, az);
+            m_gyro.Assign(gx, gy, gz);
+
+            // Orientation → rotation matrix
+            // vctMatRot3 R;
+            if (m_orientation_available) {
+                float qw = 1.0f, qx = 0.0f, qy = 0.0f, qz = 0.0f;
+                // NOTE: In this API variant, psmove_get_orientation returns void.
+                //       We just call it and then sanity-check the result.
+                psmove_get_orientation(m_move_handle, &qw, &qx, &qy, &qz);
+
+                const bool ok =
+                    std::isfinite(qw) && std::isfinite(qx) &&
+                    std::isfinite(qy) && std::isfinite(qz) &&
+                    (qw*qw + qx*qx + qy*qy + qz*qz) > 1e-12;
+
+                if (ok) {
+                    m_measured_cp.Position().Rotation().FromNormalized(vctQuaternionRotation3(qx, qy, qz, qw));
+                    m_measured_cp.SetValid(true);
+                } else {
+                    m_measured_cp.SetValid(false);
+                }
             } else {
                 m_measured_cp.SetValid(false);
             }
-        } else {
-            m_measured_cp.SetValid(false);
         }
     }
 
@@ -344,6 +349,7 @@ void mtsPSMove::initialize(void)
 
     // State table entries
     StateTable.AddData(m_operating_state, "operating_state");
+    StateTable.AddData(m_measured_cp_array, "measured_cp_array");
 
     // Provided interface
     m_interface = AddInterfaceProvided("system");
@@ -361,6 +367,9 @@ void mtsPSMove::initialize(void)
         m_interface->AddCommandWrite(&mtsPSMove::set_intrinsics, this, "set_intrinsics"); // fx,fy,cx,cy
         m_interface->AddCommandWrite(&mtsPSMove::set_camera_translation, this, "set_camera_translation");
         m_interface->AddCommandWrite(&mtsPSMove::set_camera_rotation, this, "set_camera_rotation");
+
+        // All positions
+        m_interface->AddCommandReadState(StateTable, m_measured_cp_array, "measured_cp_array");
     }
 
     // Initial camera status
@@ -396,7 +405,6 @@ void mtsPSMove::Configure(const std::string & args)
             mtsInterfaceProvided * _interface = AddInterfaceProvided(name);
             mtsStateTable * _state_table = new mtsStateTable(500, name);
             this->AddStateTable(_state_table);
-            std::cerr << "---------- new: " << name << " " << _serial << std::endl;
             auto _new_controller = new mtsPSMoveController(this, _move_handle, index, name, _serial,
                                                            _interface, _state_table);
             m_controllers.push_back(_new_controller);
@@ -429,6 +437,10 @@ void mtsPSMove::Configure(const std::string & args)
         }
     }
 
+    // initialize array of poses
+    m_measured_cp_array.Positions().resize(m_controllers.size());
+    m_measured_cp_array.SetValid(true);
+
     // TODO: Ignore this code for now. It is disabled by hardcoding m_camera_requested to false in the header.
     // Enable camera / tracking if requested
     // if (args.find("camera:1") != std::string::npos) {
@@ -439,10 +451,14 @@ void mtsPSMove::Configure(const std::string & args)
 
 void mtsPSMove::Startup(void)
 {
-    m_interface->SendStatus("PSMove started");
+    for (auto controller : m_controllers) {
+        controller->startup();
+    }
 
     // honor requested camera state
-    enable_camera(m_camera_requested);
+    if (m_camera_requested) {
+        camera_start_if_needed();
+    }
 
     // dummy state
     m_operating_state.SetState(prmOperatingState::ENABLED);
@@ -512,12 +528,13 @@ void mtsPSMove::dispatch_operating_state(void)
 
 void mtsPSMove::update_data(void)
 {
+    size_t index = 0;
     for (auto controller : m_controllers) {
         controller->update_data();
+        m_measured_cp_array.Positions().at(index) = controller->m_measured_cp.Position();
+        ++index;
     }
 
-    return;
-    
     // Drive camera state machine
     const double now = osaGetTime();
     camera_step(now);
@@ -606,11 +623,11 @@ void mtsPSMove::camera_set_status(const CameraStatus s)
     }
     m_camera_status = s;
     switch (s) {
-        case CameraStatus::Disabled:    m_interface->SendStatus("Camera: disabled"); break;
-        case CameraStatus::Starting:    m_interface->SendStatus("Camera: starting"); break;
-        case CameraStatus::Calibrating: m_interface->SendStatus("Camera: calibrating"); break;
-        case CameraStatus::Ready:       m_interface->SendStatus("Camera: ready"); break;
-        case CameraStatus::Error:       m_interface->SendError("Camera: error"); break;
+    case CameraStatus::Disabled:    m_interface->SendStatus("Camera: disabled"); break;
+    case CameraStatus::Starting:    m_interface->SendStatus("Camera: starting"); break;
+    case CameraStatus::Calibrating: m_interface->SendStatus("Camera: calibrating"); break;
+    case CameraStatus::Ready:       m_interface->SendStatus("Camera: ready"); break;
+    case CameraStatus::Error:       m_interface->SendError("Camera: error"); break;
     }
 }
 
