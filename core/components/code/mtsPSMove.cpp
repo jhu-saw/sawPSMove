@@ -91,7 +91,7 @@ public:
 
         m_measured_cp.SetValid(false);
         m_measured_cp.SetMovingFrame(m_name);
-        m_measured_cp.SetReferenceFrame("world");
+        m_measured_cp.SetReferenceFrame(m_system->m_reference_frame);
         m_measured_cp.SetTimestamp(0.0);
 
         m_gripper_measured_js.SetValid(false);
@@ -344,9 +344,6 @@ void mtsPSMove::initialize(void)
     m_operating_state.SetValid(true);
     m_operating_state.SetState(prmOperatingState::DISABLED);
 
-    m_R_world_cam.Assign(vctMatRot3::Identity());
-    m_t_world_cam.Assign(0.0, 0.0, 0.0);
-
     // State table entries
     StateTable.AddData(m_operating_state, "operating_state");
     StateTable.AddData(m_measured_cp_array, "measured_cp_array");
@@ -365,8 +362,6 @@ void mtsPSMove::initialize(void)
         // Camera / tracking commands
         m_interface->AddCommandWrite(&mtsPSMove::enable_camera, this, "enable_camera");
         m_interface->AddCommandWrite(&mtsPSMove::set_intrinsics, this, "set_intrinsics"); // fx,fy,cx,cy
-        m_interface->AddCommandWrite(&mtsPSMove::set_camera_translation, this, "set_camera_translation");
-        m_interface->AddCommandWrite(&mtsPSMove::set_camera_rotation, this, "set_camera_rotation");
 
         // All positions
         m_interface->AddCommandReadState(StateTable, m_measured_cp_array, "measured_cp_array");
@@ -386,14 +381,49 @@ mtsPSMove::~mtsPSMove()
 }
 
 
-void mtsPSMove::Configure(const std::string & args)
+void mtsPSMove::Configure(const std::string & filename)
 {
-    int count = psmove_count_connected();
+    if (!filename.empty()) {
+
+        std::ifstream json_stream;
+        json_stream.open(filename.c_str());
+
+        Json::Value json_config, json_value;
+        Json::Reader json_reader;
+        // make sure the file valid json
+        if (!json_reader.parse(json_stream, json_config)) {
+            CMN_LOG_CLASS_INIT_ERROR << "Configure: failed to parse configuration" << std::endl
+                                     << "File: " << filename << std::endl << "Error(s):" << std::endl
+                                     << json_reader.getFormattedErrorMessages();
+            exit(EXIT_FAILURE);
+        }
+
+        // configuration
+        json_value = json_config["camera_requested"];
+        if (!json_value.empty()) {
+            m_camera_requested = json_value.asBool();
+        }
+        json_value = json_config["desired_controller_names"];
+        if (json_value.isArray()) {
+            for (Json::Value::ArrayIndex i = 0; i < json_value.size(); ++i) {
+                m_desired_controller_names.push_back(json_value[i].asString());
+            }
+        }
+        json_value = json_config["base_frame"];
+        if (!json_config.empty()) {
+            m_reference_frame = json_value["reference_frame"].asString();
+            vctFrm4x4 _transform;
+            cmnDataDeSerializeTextJSON<vctFrm4x4>(_transform, json_value["transform"]);
+            m_base_frame.FromNormalized(_transform);
+        }
+    }
+
+    size_t count = psmove_count_connected();
     if (count <= 0) {
         CMN_LOG_CLASS_INIT_ERROR << "No PS Move controllers found" << std::endl;
         return;
     }
-    for (int index = 0; index < count; ++index) {
+    for (size_t index = 0; index < count; ++index) {
         PSMove * _move_handle = psmove_connect_by_id(index);
         if (!_move_handle) {
             CMN_LOG_CLASS_INIT_ERROR << "Failed to connect controller #" << index << std::endl;
@@ -401,11 +431,16 @@ void mtsPSMove::Configure(const std::string & args)
             char *serial = psmove_get_serial(_move_handle);
             std::string _serial(serial);
             psmove_free_mem(serial);
-            std::string name = "controller" + std::to_string(index + 1);
-            mtsInterfaceProvided * _interface = AddInterfaceProvided(name);
-            mtsStateTable * _state_table = new mtsStateTable(500, name);
+            std::string _name;
+            if (index < m_desired_controller_names.size()) {
+                _name = m_desired_controller_names.at(index);
+            } else {
+                _name = "controller" + std::to_string(index + 1);
+            }
+            mtsInterfaceProvided * _interface = AddInterfaceProvided(_name);
+            mtsStateTable * _state_table = new mtsStateTable(500, _name);
             this->AddStateTable(_state_table);
-            auto _new_controller = new mtsPSMoveController(this, _move_handle, index, name, _serial,
+            auto _new_controller = new mtsPSMoveController(this, _move_handle, index, _name, _serial,
                                                            _interface, _state_table);
             m_controllers.push_back(_new_controller);
         }
@@ -531,7 +566,13 @@ void mtsPSMove::update_data(void)
     size_t index = 0;
     for (auto controller : m_controllers) {
         controller->update_data();
-        m_measured_cp_array.Positions().at(index) = controller->m_measured_cp.Position();
+        // compute pose wrt base frame
+        auto & c_measured_cp = controller->m_measured_cp.Position();
+        vctFrm3 _pose;
+        m_base_frame.ApplyTo(c_measured_cp, _pose);
+        c_measured_cp.FromNormalized(_pose);
+        // "point cloud"
+        m_measured_cp_array.Positions().at(index) = _pose;
         ++index;
     }
 
@@ -566,11 +607,7 @@ void mtsPSMove::update_data(void)
                 // Pinhole projection to get X,Y in meters (camera frame).
                 const double X = (double(u) - m_cx) * Z / m_fx;
                 const double Y = (double(v) - m_cy) * Z / m_fy;
-
-                const vct3 p_cam(X, Y, Z);
-                const vct3 p_w = m_R_world_cam * p_cam + m_t_world_cam;
-
-                controller->m_measured_cp.Position().Translation().Assign(p_w[0], p_w[1], p_w[2]);
+                controller->m_measured_cp.Position().Translation().Assign(X, Y, Z);
             }
         }
         // If not ok_px, we keep last translation to avoid output flicker on intermittent tracking.
@@ -600,18 +637,6 @@ void mtsPSMove::set_intrinsics(const vctDouble4 &fx_fy_cx_cy)
     m_fy = fx_fy_cx_cy[1];
     m_cx = fx_fy_cx_cy[2];
     m_cy = fx_fy_cx_cy[3];
-}
-
-
-void mtsPSMove::set_camera_translation(const vctDouble3 &translation)
-{
-    m_t_world_cam = translation;
-}
-
-
-void mtsPSMove::set_camera_rotation(const vctMatRot3 &rotation)
-{
-    m_R_world_cam = rotation;
 }
 
 

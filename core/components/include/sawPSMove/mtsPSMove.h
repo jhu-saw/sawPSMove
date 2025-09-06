@@ -79,8 +79,6 @@ protected:
     // Camera control API
     void enable_camera(const bool &enable);
     void set_intrinsics(const vctDouble4 &fx_fy_cx_cy);
-    void set_camera_translation(const vctDouble3 &translation);
-    void set_camera_rotation(const vctMatRot3 &rotation);
 
     // Internals
     void initialize(void);
@@ -99,19 +97,20 @@ protected:
 
     // Tracker handle (optional)
     PSMoveTracker * m_tracker_handle = nullptr;
-
+    std::vector<std::string> m_desired_controller_names; // loaded from configuration file
+    
     // Camera config
-    bool m_camera_requested = true;               // user's desired state
+    bool m_camera_requested = false;               // user's desired state
     CameraStatus m_camera_status = CameraStatus::Disabled;
     bool m_camera_have_pose = false;
     double m_fx = 0.0, m_fy = 0.0, m_cx = 0.0, m_cy = 0.0; // intrinsics
-    vctMatRot3 m_R_world_cam;                      // camera rotation in world
-    vctDouble3 m_t_world_cam;                      // camera translation in world
     double m_cam_last_enable_try_sec = 0.0;
     double m_cam_calib_start_sec = 0.0;
     double m_cam_retry_period_sec = 1.0;           // re-create tracker / re-enable cadence
     double m_cam_calib_timeout_sec = 15.0;          // time to reach CALIBRATED
-
+    std::string m_reference_frame = "PS_camera";
+    vctFrm3 m_base_frame;
+    
     // State
     prmOperatingState m_operating_state;
     mtsFunctionWrite m_operating_state_event;
