@@ -25,10 +25,12 @@ You will first need to download, compile and install the
 https://github.com/thp/psmoveapi.  Then configure the build with
 `ccmake` or `cmake-gui` , set the build type to `Release` and the
 install prefix to `/usr/local`.  Build with `make` and install with
-`sudo make install`.  
+`sudo make install`. It is important to use sudo to install as this step
+also installs some system wide udev rules in `/etc`.
 
 ```bash
-git clone https://github.com/thp/psmoveapi.git
+sudo apt install libusb-dev libv4l-dev build-essential git cmake libbluetooth-dev
+git clone https://github.com/thp/psmoveapi.git --recursive
 cd psmoveapi
 mkdir build
 cd build
@@ -46,9 +48,9 @@ make -j$(nproc)
 sudo make install
 ```
 
-The *psmoveapi* headers, libraries and
-executables will be install under `/usr/local`.
-
+The *psmoveapi* headers, libraries and executables will be installed
+under `/usr/local`. After you install *psmoveapi*, run `sudo ldconfig`
+so the *psmove* libraries can be found.
 
 You might need to change your BlueTooth configuration, see
 https://psmoveapi.readthedocs.io/en/latest/pairing.html (summary, edit
