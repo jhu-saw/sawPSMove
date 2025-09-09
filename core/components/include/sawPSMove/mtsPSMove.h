@@ -35,6 +35,9 @@ http://www.cisst.org/cisst/license.txt.
 struct _PSMoveTracker;
 typedef struct _PSMoveTracker PSMoveTracker;
 
+struct _PSMoveFusion;
+typedef struct _PSMoveFusion PSMoveFusion;
+
 class mtsPSMoveController;
 
 class CISST_EXPORT mtsPSMove: public mtsTaskPeriodic
@@ -78,7 +81,9 @@ protected:
 
     // Camera control API
     void enable_camera(const bool &enable);
-    void set_intrinsics(const vctDouble4 &fx_fy_cx_cy);
+
+    // Fusion control API
+    void init_fusion();
 
     // Internals
     void initialize(void);
@@ -91,19 +96,18 @@ protected:
     void camera_step(const double now_sec);              // drive calibration / status
     void camera_stop(void);
     void camera_set_status(const CameraStatus s);
-    void camera_init_image_center_from_tracker(void);
-    void camera_init_fx_fy_if_needed(const int width_px, const int height_px);
 
 
     // Tracker handle (optional)
     PSMoveTracker * m_tracker_handle = nullptr;
     std::vector<std::string> m_desired_controller_names; // loaded from configuration file
-    
+
+    // Fusion
+    PSMoveFusion * m_fusion_handle = nullptr;
+
     // Camera config
     bool m_camera_requested = false;               // user's desired state
     CameraStatus m_camera_status = CameraStatus::Disabled;
-    bool m_camera_have_pose = false;
-    double m_fx = 0.0, m_fy = 0.0, m_cx = 0.0, m_cy = 0.0; // intrinsics
     double m_cam_last_enable_try_sec = 0.0;
     double m_cam_calib_start_sec = 0.0;
     double m_cam_retry_period_sec = 1.0;           // re-create tracker / re-enable cadence

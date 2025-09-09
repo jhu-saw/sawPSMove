@@ -31,6 +31,7 @@ http://www.cisst.org/cisst/license.txt.
 extern "C" {
 #include <psmoveapi/psmove.h>
 #include <psmoveapi/psmove_tracker.h>
+#include <psmoveapi/psmove_fusion.h>
 }
 
 
@@ -144,7 +145,7 @@ public:
 
 
     void destruct(void)
-    {
+    {   
         psmove_set_rumble(m_move_handle, 0);
         psmove_set_leds(m_move_handle, 0, 0, 0);
         psmove_update_leds(m_move_handle);
@@ -361,7 +362,6 @@ void mtsPSMove::initialize(void)
 
         // Camera / tracking commands
         m_interface->AddCommandWrite(&mtsPSMove::enable_camera, this, "enable_camera");
-        m_interface->AddCommandWrite(&mtsPSMove::set_intrinsics, this, "set_intrinsics"); // fx,fy,cx,cy
 
         // All positions
         m_interface->AddCommandReadState(StateTable, m_measured_cp_array, "measured_cp_array");
@@ -374,6 +374,9 @@ void mtsPSMove::initialize(void)
 
 mtsPSMove::~mtsPSMove()
 {
+    if (m_fusion_handle) {
+        psmove_fusion_free(m_fusion_handle);
+    }
     for (auto controller : m_controllers) {
         controller->destruct();
     }
@@ -587,30 +590,26 @@ void mtsPSMove::update_data(void)
         psmove_tracker_update(m_tracker_handle, nullptr);
     }
 
-    if (m_tracker_handle) {
-        for (auto controller : m_controllers) {
-            auto & c_move_handle = controller->m_move_handle;
-            float u = 0.f, v = 0.f, r = 0.f;
-            const int age_ms = psmove_tracker_get_position(m_tracker_handle, c_move_handle, &u, &v, &r);
-            const bool ok_px = std::isfinite(u) && std::isfinite(v) && std::isfinite(r) && (r > 1e-6f) && (age_ms >= 0);
+    if (!m_tracker_handle || !m_fusion_handle) return;
 
-            if (ok_px) {
-                // Seed (cx, cy) from the actual tracker image size once
-                camera_init_image_center_from_tracker();
-                const float dist_cm = psmove_tracker_distance_from_radius(m_tracker_handle, r);
-                const double Z = double(dist_cm) * 0.01; // convert cm -> meters
-                // provide a reasonable fx,fy once.
-                int w = 0, h = 0;
-                psmove_tracker_get_size(m_tracker_handle, &w, &h);
-                camera_init_fx_fy_if_needed(w, h);
+    for (auto controller : m_controllers) {
+        auto& move = controller->m_move_handle;
 
-                // Pinhole projection to get X,Y in meters (camera frame).
-                const double X = (double(u) - m_cx) * Z / m_fx;
-                const double Y = (double(v) - m_cy) * Z / m_fy;
-                controller->m_measured_cp.Position().Translation().Assign(X, Y, Z);
-            }
+        // Make sure the tracker has an up-to-date blob for this controller
+        // (typically you already call psmove_tracker_update_image() per frame elsewhere)
+        float x_cm = 0.f, y_cm = 0.f, z_cm = 0.f;
+        psmove_fusion_get_position(m_fusion_handle, move, &x_cm, &y_cm, &z_cm);
+
+        // Optional sanity check similar to your ok_px
+        const bool ok = std::isfinite(x_cm) && std::isfinite(y_cm) && std::isfinite(z_cm);
+
+        if (ok) {
+            const double X = 0.01 * static_cast<double>(x_cm); // cm -> m
+            const double Y = 0.01 * static_cast<double>(y_cm); // cm -> m
+            const double Z = 0.01 * static_cast<double>(z_cm); // cm -> m
+            controller->m_measured_cp.Position().Translation().Assign(X, Y, Z);
         }
-        // If not ok_px, we keep last translation to avoid output flicker on intermittent tracking.
+        // If not ok, we keep last translation to avoid output flicker on intermittent tracking.
     }
     // else {
     //     // No tracker
@@ -628,15 +627,6 @@ void mtsPSMove::enable_camera(const bool &enable)
         return;
     }
     camera_start_if_needed();
-}
-
-
-void mtsPSMove::set_intrinsics(const vctDouble4 &fx_fy_cx_cy)
-{
-    m_fx = fx_fy_cx_cy[0];
-    m_fy = fx_fy_cx_cy[1];
-    m_cx = fx_fy_cx_cy[2];
-    m_cy = fx_fy_cx_cy[3];
 }
 
 
@@ -695,39 +685,6 @@ void mtsPSMove::camera_start_if_needed(void)
 }
 
 
-// Uses the tracker's actual image size to seed (cx, cy) once.
-void mtsPSMove::camera_init_image_center_from_tracker(void)
-{
-    if (!m_tracker_handle) { return; }
-    int w = 0, h = 0;
-    psmove_tracker_get_size(m_tracker_handle, &w, &h); // ask tracker which image size it's using
-    if (w > 0 && h > 0) {
-        // avoid overwriting values set via set_intrinsics().
-        if (!(std::isfinite(m_cx) && std::isfinite(m_cy) && m_cx != 0.0 && m_cy != 0.0)) {
-            m_cx = 0.5 * double(w);  // assume principal point at image center
-            m_cy = 0.5 * double(h);
-        }
-    }
-}
-
-
-// Provides a one-time sensible default for fx, fy if the user never sets intrinsics.
-// used to scale X,Y from pixels to meters; Z comes from the tracker model.
-void mtsPSMove::camera_init_fx_fy_if_needed(int width_px, [[maybe_unused]] int height_px)
-{
-    if (m_fx > 0.0 && m_fy > 0.0) return; // respect user-provided values
-
-    // PS Eye wide FOV is ~75–80° horizontally. Use 75° as a conservative default.
-    const double fov_h_deg = 75.0;
-    const double fov_h_rad = fov_h_deg * (M_PI / 180.0);
-
-    // fx ~ (W/2) / tan(FOV/2). Assume square pixels -> fy = fx.
-    const double fx_guess = (0.5 * double(width_px)) / std::tan(0.5 * fov_h_rad);
-    if (!(m_fx > 0.0)) m_fx = fx_guess;
-    if (!(m_fy > 0.0)) m_fy = fx_guess;
-}
-
-
 void mtsPSMove::camera_step(double now_sec)
 {
     // Honor desired state
@@ -751,6 +708,8 @@ void mtsPSMove::camera_step(double now_sec)
         }
         if (ready) {
             camera_set_status(CameraStatus::Ready);
+            // Initialize fusion now that tracker is ready
+            init_fusion();
             // >>> re-enable rate limiting once Ready <<<
             for (const auto controller : m_controllers) {
                 psmove_set_rate_limiting(controller->m_move_handle, 1);
@@ -774,6 +733,8 @@ void mtsPSMove::camera_step(double now_sec)
             // write a message that we are calibrated
             m_interface->SendStatus("Camera: calibrated");
             camera_set_status(CameraStatus::Ready);
+            // Initialize fusion now that tracker is ready
+            init_fusion();
             return;
         }
         if ((now_sec - m_cam_calib_start_sec) > m_cam_calib_timeout_sec) {
@@ -794,6 +755,10 @@ void mtsPSMove::camera_stop(void)
         psmove_tracker_free(m_tracker_handle);
         m_tracker_handle = nullptr;
     }
+    if (m_fusion_handle) {
+        psmove_fusion_free(m_fusion_handle);
+        m_fusion_handle = nullptr;
+    }
     // Re-enable rate limiting when stopping camera
     for (const auto controller : m_controllers) {
         psmove_set_rate_limiting(controller->m_move_handle, 1);
@@ -802,3 +767,17 @@ void mtsPSMove::camera_stop(void)
     m_cam_last_enable_try_sec = 0.0;
     m_cam_calib_start_sec = 0.0;
 }
+
+
+// call once after tracker is ready
+void mtsPSMove::init_fusion()
+{
+    // choose a sensible clip range around typical PS Move distances (in cm).
+    // e.g., 10 cm to 500 cm. Adjust for your setup/room.
+    const float z_near_cm = 10.f;
+    const float z_far_cm  = 500.f;
+    m_fusion_handle = psmove_fusion_new(m_tracker_handle, z_near_cm, z_far_cm);
+}
+
+
+
