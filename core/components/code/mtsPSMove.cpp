@@ -28,11 +28,113 @@ http://www.cisst.org/cisst/license.txt.
 #include <cstdlib>
 #include <cstring>
 
+
 extern "C" {
 #include <psmoveapi/psmove.h>
 #include <psmoveapi/psmove_tracker.h>
 #include <psmoveapi/psmove_fusion.h>
 }
+
+
+// Utilities for OneEuroFilter
+typedef double TimeStamp; // in seconds
+static const TimeStamp UndefinedTime = -1.0;
+
+class LowPassFilter
+{
+    double y, a, s;
+    bool initialized;
+
+    void setAlpha(double alpha) {
+        if (alpha <= 0.0 || alpha > 1.0) {
+            a = 0.5; // fallback
+        } else {
+            a = alpha;
+        }
+    }
+
+public:
+    LowPassFilter(double alpha, double initval=0.0)
+        : y(initval), s(initval), initialized(false) {
+        setAlpha(alpha);
+    }
+
+    double filter(double value) {
+        double result;
+        if (initialized) {
+            result = a * value + (1.0 - a) * s;
+        } else {
+            result = value;
+            initialized = true;
+        }
+        y = value;
+        s = result;
+        return result;
+    }
+
+    double filterWithAlpha(double value, double alpha) {
+        setAlpha(alpha);
+        return filter(value);
+    }
+
+    bool hasLastRawValue() const { return initialized; }
+    double lastRawValue()   const { return y; }
+    double lastFilteredValue() const { return s; }
+};
+
+class OneEuroFilter
+{
+    double freq;
+    double mincutoff;
+    double beta_;
+    double dcutoff;
+    LowPassFilter *x;
+    LowPassFilter *dx;
+    TimeStamp lasttime;
+
+    double alpha(double cutoff) const {
+        double te = 1.0 / freq;
+        double tau = 1.0 / (2 * M_PI * cutoff);
+        return 1.0 / (1.0 + tau / te);
+    }
+
+public:
+    OneEuroFilter(double freq,
+                  double mincutoff=1.0,
+                  double beta_=0.0,
+                  double dcutoff=1.0)
+        : x(nullptr), dx(nullptr), lasttime(UndefinedTime) {
+        setFrequency(freq);
+        setMinCutoff(mincutoff);
+        setBeta(beta_);
+        setDerivateCutoff(dcutoff);
+        x  = new LowPassFilter(alpha(mincutoff));
+        dx = new LowPassFilter(alpha(dcutoff));
+    }
+
+    ~OneEuroFilter() {
+        delete x;
+        delete dx;
+    }
+
+    double filter(double value, TimeStamp timestamp=UndefinedTime) {
+        if (lasttime != UndefinedTime && timestamp != UndefinedTime && timestamp > lasttime) {
+            freq = 1.0 / (timestamp - lasttime);
+        }
+        lasttime = timestamp;
+
+        double dvalue = x->hasLastRawValue() ? (value - x->lastFilteredValue()) * freq : 0.0;
+        double edvalue = dx->filterWithAlpha(dvalue, alpha(dcutoff));
+        double cutoff = mincutoff + beta_ * fabs(edvalue);
+        return x->filterWithAlpha(value, alpha(cutoff));
+    }
+
+    void setFrequency(double f)      { freq = (f > 0 ? f : 120.0); }
+    void setMinCutoff(double mc)     { mincutoff = (mc > 0 ? mc : 1.0); }
+    void setBeta(double b)           { beta_ = b; }
+    void setDerivateCutoff(double dc){ dcutoff = (dc > 0 ? dc : 1.0); }
+};
+
 
 
 CMN_IMPLEMENT_SERVICES_DERIVED_ONEARG(mtsPSMove,
@@ -336,6 +438,15 @@ public:
     mtsFunctionWrite m_cross_event;
     bool m_move_value = false;
     mtsFunctionWrite m_move_event;
+
+    // One Euro filters per axis (meters)
+    OneEuroFilter m_filter_x{120.0, 1.2, 0.02, 1.0};
+    OneEuroFilter m_filter_y{120.0, 1.2, 0.02, 1.0};
+    OneEuroFilter m_filter_z{120.0, 1.2, 0.02, 1.0};
+    bool          m_filters_enabled = true;
+
+    // tiny deadband to kill sub-mm shimmer at rest
+    double        m_deadband_m = 0.0009; // 0.9 mm
 };
 
 
@@ -608,13 +719,30 @@ void mtsPSMove::update_data(void)
         // No tracker or fusion - Do nothing
     }
 
-    // update all poses and point cloud
+    // update all poses and point cloud after base frame transform and filtering (if enabled)
     size_t index = 0;
     for (auto controller : m_controllers) {
         auto & c_measured_cp_local = controller->m_measured_cp_local.Position();
         auto & c_measured_cp = controller->m_measured_cp.Position();
         vctFrm3 _pose;
         m_base_frame.ApplyTo(c_measured_cp_local, _pose);
+
+        // apply filters
+        if (controller->m_filters_enabled) {
+            auto &T_new = _pose.Translation();
+            auto &T_prev = c_measured_cp.Translation();
+            double Xout = T_new.X(), Yout = T_new.Y(), Zout = T_new.Z();
+            // apply tiny deadband around last published value to eliminate shimmer
+            const double db = controller->m_deadband_m;
+            if (std::fabs(T_new.X() - T_prev.X()) < db) { Xout = T_prev.X(); }
+            else { Xout = controller->m_filter_x.filter(T_new.X(), now); }
+            if (std::fabs(T_new.Y() - T_prev.Y()) < db) { Yout = T_prev.Y(); }
+            else { Yout = controller->m_filter_y.filter(T_new.Y(), now); }
+            if (std::fabs(T_new.Z() - T_prev.Z()) < db) { Zout = T_prev.Z(); }
+            else { Zout = controller->m_filter_z.filter(T_new.Z(), now); }
+            _pose.Translation().Assign(Xout, Yout, Zout);
+        }
+
         c_measured_cp.FromNormalized(_pose);
         // "point cloud"
         m_measured_cp_array.Positions().at(index) = _pose;
