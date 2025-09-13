@@ -90,9 +90,14 @@ public:
                                        << ": no magnetometer calibration, orientation may be unavailable" << std::endl;
         }
 
+        m_measured_cp_local.SetValid(false);
+        m_measured_cp_local.SetMovingFrame(m_name);
+        m_measured_cp_local.SetReferenceFrame(m_system->m_reference_frame);
+        m_measured_cp_local.SetTimestamp(0.0);
+
         m_measured_cp.SetValid(false);
         m_measured_cp.SetMovingFrame(m_name);
-        m_measured_cp.SetReferenceFrame(m_system->m_reference_frame);
+        // m_measured_cp.SetReferenceFrame(m_system->m_reference_frame);
         m_measured_cp.SetTimestamp(0.0);
 
         m_gripper_measured_js.SetValid(false);
@@ -255,13 +260,13 @@ public:
                     (qw*qw + qx*qx + qy*qy + qz*qz) > 1e-12;
 
                 if (ok) {
-                    m_measured_cp.Position().Rotation().FromNormalized(vctQuaternionRotation3(qx, qy, qz, qw));
-                    m_measured_cp.SetValid(true);
+                    m_measured_cp_local.Position().Rotation().FromNormalized(vctQuaternionRotation3(qx, qy, qz, qw));
+                    m_measured_cp_local.SetValid(true);
                 } else {
-                    m_measured_cp.SetValid(false);
+                    m_measured_cp_local.SetValid(false);
                 }
             } else {
-                m_measured_cp.SetValid(false);
+                m_measured_cp_local.SetValid(false);
             }
         }
     }
@@ -296,7 +301,7 @@ public:
         if (!m_move_handle) {
             return;
         }
-        psmove_reset_orientation(m_move_handle);
+        psmove_reset_orientation(m_move_handle); // This would reset the local orientation 
     }
 
     // Data from system
@@ -308,7 +313,8 @@ public:
     mtsInterfaceProvided * m_interface = nullptr;
     mtsStateTable * m_state_table = nullptr;
 
-    prmPositionCartesianGet m_measured_cp;    // Pose
+    prmPositionCartesianGet m_measured_cp;    // Pose 
+    prmPositionCartesianGet m_measured_cp_local; // Local pose before base frame transform
     prmStateJoint m_gripper_measured_js;
     vctDouble3 m_accel;                       // accel raw
     vctDouble3 m_gyro;                        // gyro raw
@@ -566,17 +572,9 @@ void mtsPSMove::dispatch_operating_state(void)
 
 void mtsPSMove::update_data(void)
 {
-    size_t index = 0;
+    // update orientation, buttons, trigger, battery
     for (auto controller : m_controllers) {
         controller->update_data();
-        // compute pose wrt base frame
-        auto & c_measured_cp = controller->m_measured_cp.Position();
-        vctFrm3 _pose;
-        m_base_frame.ApplyTo(c_measured_cp, _pose);
-        c_measured_cp.FromNormalized(_pose);
-        // "point cloud"
-        m_measured_cp_array.Positions().at(index) = _pose;
-        ++index;
     }
 
     // Drive camera state machine
@@ -590,31 +588,38 @@ void mtsPSMove::update_data(void)
         psmove_tracker_update(m_tracker_handle, nullptr);
     }
 
-    if (!m_tracker_handle || !m_fusion_handle) return;
+    // update position if we have a tracker and fusion
+    if (m_tracker_handle && m_fusion_handle) {
+        for (auto controller : m_controllers) {
+            auto& move = controller->m_move_handle;
 
-    for (auto controller : m_controllers) {
-        auto& move = controller->m_move_handle;
-
-        // Make sure the tracker has an up-to-date blob for this controller
-        // (typically you already call psmove_tracker_update_image() per frame elsewhere)
-        float x_cm = 0.f, y_cm = 0.f, z_cm = 0.f;
-        psmove_fusion_get_position(m_fusion_handle, move, &x_cm, &y_cm, &z_cm);
-
-        // Optional sanity check similar to your ok_px
-        const bool ok = std::isfinite(x_cm) && std::isfinite(y_cm) && std::isfinite(z_cm);
-
-        if (ok) {
-            const double X = 0.01 * static_cast<double>(x_cm); // cm -> m
-            const double Y = 0.01 * static_cast<double>(y_cm); // cm -> m
-            const double Z = 0.01 * static_cast<double>(z_cm); // cm -> m
-            controller->m_measured_cp.Position().Translation().Assign(X, Y, Z);
+            float x_cm = 0.f, y_cm = 0.f, z_cm = 0.f;
+            psmove_fusion_get_position(m_fusion_handle, move, &x_cm, &y_cm, &z_cm);
+            const bool ok = std::isfinite(x_cm) && std::isfinite(y_cm) && std::isfinite(z_cm);
+            if (ok) {
+                const double X = 0.01 * static_cast<double>(x_cm); // cm -> m
+                const double Y = 0.01 * static_cast<double>(y_cm); // cm -> m
+                const double Z = 0.01 * static_cast<double>(z_cm); // cm -> m
+                controller->m_measured_cp_local.Position().Translation().Assign(X, Y, Z);
+            }
+            // If not ok, we keep last translation to avoid output flicker on intermittent tracking.
         }
-        // If not ok, we keep last translation to avoid output flicker on intermittent tracking.
+    } else {
+        // No tracker or fusion - Do nothing
     }
-    // else {
-    //     // No tracker
-    //     m_measured_cp.Position().Translation().Assign(0.0, 0.0, 0.0);
-    // }
+
+    // update all poses and point cloud
+    size_t index = 0;
+    for (auto controller : m_controllers) {
+        auto & c_measured_cp_local = controller->m_measured_cp_local.Position();
+        auto & c_measured_cp = controller->m_measured_cp.Position();
+        vctFrm3 _pose;
+        m_base_frame.ApplyTo(c_measured_cp_local, _pose);
+        c_measured_cp.FromNormalized(_pose);
+        // "point cloud"
+        m_measured_cp_array.Positions().at(index) = _pose;
+        ++index;
+    }
 
 }
 
