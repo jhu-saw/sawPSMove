@@ -193,13 +193,13 @@ public:
         }
 
         m_measured_cp_local.SetValid(false);
-        m_measured_cp_local.SetMovingFrame(m_name);
-        m_measured_cp_local.SetReferenceFrame(m_system->m_reference_frame);
+        // m_measured_cp_local.SetMovingFrame(m_name);
+        // m_measured_cp_local.SetReferenceFrame(m_system->m_reference_frame);
         m_measured_cp_local.SetTimestamp(0.0);
 
         m_measured_cp.SetValid(false);
         m_measured_cp.SetMovingFrame(m_name);
-        // m_measured_cp.SetReferenceFrame(m_system->m_reference_frame);
+        m_measured_cp.SetReferenceFrame(m_system->m_reference_frame);
         m_measured_cp.SetTimestamp(0.0);
 
         m_gripper_measured_js.SetValid(false);
