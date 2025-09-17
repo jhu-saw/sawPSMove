@@ -66,6 +66,7 @@ private:
 	struct {
         mtsFunctionRead period_statistics;
         mtsFunctionRead measured_cp;
+        mtsFunctionRead measured_cp_local;
         mtsFunctionRead get_buttons;
         mtsFunctionRead trigger;
         mtsFunctionRead battery;
@@ -90,6 +91,7 @@ private:
     prmOperatingStateQtWidget * QPOState = nullptr;
     mtsMessageQtWidget * QMMessage = nullptr;
     prmPositionCartesianGetQtWidget * QPCGWidget = nullptr;
+    prmPositionCartesianGetQtWidget * QPCGLocalWidget = nullptr;
 
 };
 

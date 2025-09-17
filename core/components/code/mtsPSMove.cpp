@@ -207,6 +207,7 @@ public:
         m_gripper_measured_js.Name().at(0) = "gripper";
         m_gripper_measured_js.Position().SetSize(1);
 
+        m_state_table->AddData(m_measured_cp_local, "measured_cp_local");
         m_state_table->AddData(m_measured_cp, "measured_cp"); // CRTK name
         m_state_table->AddData(m_gripper_measured_js, "gripper_measured_js"); // CRTK name
         m_state_table->AddData(m_accel, "accel_raw");
@@ -228,6 +229,7 @@ public:
                                          m_system->StateTable.PeriodStats,  "period_statistics");
 
         // controller commands
+        m_interface->AddCommandReadState(*m_state_table, m_measured_cp_local, "measured_cp_local");
         m_interface->AddCommandReadState(*m_state_table, m_measured_cp, "measured_cp");
         m_interface->AddCommandReadState(*m_state_table, m_gripper_measured_js, "gripper/measured_js");
 
@@ -440,6 +442,7 @@ public:
     mtsFunctionWrite m_move_event;
 
     // One Euro filters per axis (meters)
+    // Parameters: frequency(Hz), min_cutoff(Hz), beta(unitless), derivative_cutoff(Hz)
     OneEuroFilter m_filter_x{120.0, 1.2, 0.02, 1.0};
     OneEuroFilter m_filter_y{120.0, 1.2, 0.02, 1.0};
     OneEuroFilter m_filter_z{120.0, 1.2, 0.02, 1.0};
@@ -744,6 +747,9 @@ void mtsPSMove::update_data(void)
         }
 
         c_measured_cp.FromNormalized(_pose);
+        // set valid if local pose valid
+        controller->m_measured_cp.SetValid(controller->m_measured_cp_local.Valid());
+
         // "point cloud"
         m_measured_cp_array.Positions().at(index) = _pose;
         ++index;

@@ -46,6 +46,7 @@ mtsPSMoveQtWidget::mtsPSMoveQtWidget(const std::string &name, QWidget *parent):
         QMMessage->SetInterfaceRequired(m_controller_interface);
         QPOState->SetInterfaceRequired(m_controller_interface);
         m_controller_interface->AddFunction("measured_cp", controller.measured_cp);
+        m_controller_interface->AddFunction("measured_cp_local", controller.measured_cp_local);
         m_controller_interface->AddFunction("get_buttons", controller.get_buttons);
         m_controller_interface->AddFunction("trigger", controller.trigger);
         m_controller_interface->AddFunction("battery", controller.battery);
@@ -71,6 +72,10 @@ mtsPSMoveQtWidget::mtsPSMoveQtWidget(const std::string &name, QWidget *parent):
 
     QPCGWidget = new prmPositionCartesianGetQtWidget();
     layout->addWidget(QPCGWidget,   row++, 0, 1, 2);
+
+    QPCGLocalWidget = new prmPositionCartesianGetQtWidget();
+    layout->addWidget(new QLabel("Local Pose - No filter"), row++, 0, 1, 2);
+    layout->addWidget(QPCGLocalWidget,   row++, 0, 1, 2);
 
     layout->addWidget(new QLabel("<b>Inputs</b>"), row++, 0, 1, 2);
     layout->addWidget(Buttons, row++, 0, 1, 2);
@@ -126,6 +131,11 @@ void mtsPSMoveQtWidget::OnTimer()
     prmPositionCartesianGet cp;
     if (controller.measured_cp(cp).IsOK()) {
         QPCGWidget->SetValue(cp);
+    }
+
+    prmPositionCartesianGet cp_local;
+    if (controller.measured_cp_local(cp_local).IsOK()) {
+        QPCGLocalWidget->SetValue(cp_local);
     }
 
     unsigned int btn = 0;
