@@ -162,29 +162,37 @@ public:
             if (_new_buttons != m_buttons) {
                 m_buttons = _new_buttons;
                 bool _new_button;
+                // prepare payloads
+                const double now = mtsManagerLocal::GetInstance()->GetTimeServer().GetRelativeTime();
+                prmEventButton pressed(prmEventButton::PRESSED);
+                pressed.SetValid(true);
+                pressed.SetTimestamp(now);
+                prmEventButton released(prmEventButton::RELEASED);
+                released.SetValid(true);
+                released.SetTimestamp(now);
                 _new_button = m_buttons & Btn_SQUARE;
                 if (_new_button != m_square_value) {
-                    m_square_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                    m_square_event(_new_button ? pressed : released);
                     m_square_value = _new_button;
                 }
                 _new_button = m_buttons & Btn_TRIANGLE;
                 if (_new_button != m_triangle_value) {
-                    m_triangle_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                    m_triangle_event(_new_button ? pressed : released);
                     m_triangle_value = _new_button;
                 }
                 _new_button = m_buttons & Btn_CIRCLE;
                 if (_new_button != m_circle_value) {
-                    m_circle_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                    m_circle_event(_new_button ? pressed : released);
                     m_circle_value = _new_button;
                 }
                 _new_button = m_buttons & Btn_CROSS;
                 if (_new_button != m_cross_value) {
-                    m_cross_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                    m_cross_event(_new_button ? pressed : released);
                     m_cross_value = _new_button;
                 }
                 _new_button = m_buttons & Btn_MOVE;
                 if (_new_button != m_move_value) {
-                    m_move_event(_new_button ? prmEventButton::BUTTON_PRESSED : prmEventButton::BUTTON_RELEASED);
+                    m_move_event(_new_button ? pressed : released);
                     m_move_value = _new_button;
                 }
 
