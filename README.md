@@ -1,8 +1,8 @@
 # sawPSMove
 
 SAW wrapper for PS Move Controllers (PlayStation) based on the
-*psmmoveapi* library: https://github.com/thp/psmoveapi. This code
-compile on Linux.  This repository provides a core component as well
+*PSMoveAPI* library: https://github.com/thp/psmoveapi. This code
+compiles on Linux.  This repository provides a core component as well
 as:
 
 * Example application with Qt based GUI
@@ -14,67 +14,46 @@ as:
 
 # Dependencies
  * cisst libraries: https://github.com/jhu-cisst/cisst
- * *psmoveapi*: https://github.com/thp/psmoveapi
+ * PSMoveAPI build dependencies (the source is downloaded automatically)
  * Qt for user interface
  * ROS and ROS CRTK (optional) - works with ROS 1 and ROS 2!
 
 # Compilation and configuration
 
-You will first need to download, compile and install the
-*psmoveapi*. You can git clone the code from
-https://github.com/thp/psmoveapi.  Then configure the build with
-`ccmake` or `cmake-gui` , set the build type to `Release` and the
-install prefix to `/usr/local`.  Build with `make` and install with
-`sudo make install`. It is important to use sudo to install as this step
-also installs some system wide udev rules in `/etc`.
+By default, sawPSMove downloads a pinned PSMoveAPI revision and builds
+the core library, tracker library and `psmove` command-line utility.
+The build doesn't install anything system-wide and doesn't require a
+pre-existing PSMoveAPI installation.
 
 ```bash
-sudo apt install libusb-dev libv4l-dev build-essential git cmake libbluetooth-dev
-git clone https://github.com/thp/psmoveapi.git --recursive
-cd psmoveapi
-mkdir build
-cd build
+sudo apt install build-essential cmake git libbluetooth-dev libdbus-1-dev \
+  libopencv-dev libudev-dev libusb-1.0-0-dev libv4l-dev
 ```
+
+The bundled revision can be changed without editing the CMake files:
 
 ```bash
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
+colcon build --packages-select sawPSMoveCore \
+  --cmake-args -DSAW_PSMOVEAPI_GIT_TAG=<commit-or-tag> \
+               -DSAW_PSMOVEAPI_UPDATE=ON
 ```
+
+For development, use a commit hash so builds remain reproducible.  The
+default is the upstream commit tested with sawPSMove.  Remote updates
+are disabled after the initial clone unless `SAW_PSMOVEAPI_UPDATE` is
+enabled.
+
+To use an existing PSMoveAPI installation instead, select the system
+provider:
 
 ```bash
-make -j$(nproc)
+colcon build --packages-select sawPSMoveCore \
+  --cmake-args -DSAW_PSMOVEAPI_PROVIDER=SYSTEM
 ```
 
-```bash
-sudo make install
-```
-
-The *psmoveapi* headers, libraries and executables will be installed
-under `/usr/local`. After you install *psmoveapi*, run `sudo ldconfig`
-so the *psmove* libraries can be found.
-
-You might need to change your BlueTooth configuration, see
-https://psmoveapi.readthedocs.io/en/latest/pairing.html (summary, edit
-`/etc/bluetooth/input.conf` to set `ClassicBondedOnly=false`).
-
-## Verify Installation
-
-   * Headers:
-
-     ```bash
-     ls /usr/local/include/psmoveapi/
-     ```
-
-     Expected output: `psmove.h  psmove_config.h  psmove_tracker.h ...`
-
-   * Executables:
-
-     ```bash
-     which psmove
-     ```
-     Expected output: `/usr/local/bin/psmove`
-
-To pair the controllers, since `psmove` should be installed in
-`/usr/local/bin`, you can type `psmove pair` and `psmove register`.
+You might need to change your Bluetooth configuration; see
+https://psmoveapi.readthedocs.io/en/latest/pairing.html.  Use `psmove
+pair` and `psmove register` to pair controllers.
 
 # Build
 

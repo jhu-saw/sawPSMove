@@ -9,7 +9,10 @@
 #
 # --- end cisst license ---
 
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required (VERSION 3.16)
+if (POLICY CMP0144)
+  cmake_policy (SET CMP0144 NEW)
+endif ()
 project (ps_move VERSION 0.1.0)
 
 # first test for ROS1
@@ -54,51 +57,37 @@ set (REQUIRED_CISST_LIBRARIES
   cisstMultiTask
   cisstMultiTaskQt
   cisstParameterTypes
-  cisstParameterTypesQt
-  cisstQt)
+  cisstParameterTypesQt)
 
-find_package (cisst 1.2.1 REQUIRED ${REQUIRED_CISST_LIBRARIES})
+find_package (cisst 1.5 REQUIRED COMPONENTS ${REQUIRED_CISST_LIBRARIES})
 
-if (cisst_FOUND_AS_REQUIRED)
-
-  # load cisst configuration
-  include (${CISST_USE_FILE})
-
-  # set paths
-  cisst_set_output_path ()
+# set paths
+cisst_set_output_path ()
 
   # sawPSMove has been compiled within cisst, we should find it automatically
-  find_package (sawPSMove)
+find_package (sawPSMove REQUIRED)
 
-  if (sawPSMove_FOUND)
+# sawPSMove configuration
+include_directories (${CATKIN_DEVEL_PREFIX}/include ${sawPSMove_INCLUDE_DIR})
 
-    # sawPSMove configuration
-    include_directories (${CATKIN_DEVEL_PREFIX}/include ${sawPSMove_INCLUDE_DIR})
+link_directories (${sawPSMove_LIBRARY_DIR})
 
-    link_directories (${sawPSMove_LIBRARY_DIR})
+add_executable (ps_move src/ps_move.cpp)
+target_link_libraries (ps_move
+  ${sawPSMove_LIBRARIES}
+  ${catkin_LIBRARIES}
+  ${cisst_LIBRARIES})
 
-    add_executable (ps_move src/ps_move.cpp)
-    target_link_libraries (ps_move
-      ${sawPSMove_LIBRARIES}
-      ${catkin_LIBRARIES})
-    cisst_target_link_libraries (ps_move ${REQUIRED_CISST_LIBRARIES})
+install (TARGETS ps_move
+  LIBRARY DESTINATION lib/${PROJECT_NAME}
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+  LIBRARY DESTINATION lib
+  INCLUDES DESTINATION include)
 
-    install (TARGETS ps_move
-      LIBRARY DESTINATION lib/${PROJECT_NAME}
-      RUNTIME DESTINATION lib/${PROJECT_NAME}
-      LIBRARY DESTINATION lib
-      INCLUDES DESTINATION include)
-
-    if (ROS_VERSION EQUAL 2)
-      ament_target_dependencies (
-        ps_move
-        ${ROS2_depends}
-        )
-      ament_package ()
-    endif ()
-
-  else (sawPSMove_FOUND)
-    message ("Information: code in ${CMAKE_CURRENT_SOURCE_DIR} will not be compiled, it requires sawPSMove")
-  endif (sawPSMove_FOUND)
-
-endif (cisst_FOUND_AS_REQUIRED)
+if (ROS_VERSION EQUAL 2)
+  ament_target_dependencies (
+    ps_move
+    ${ROS2_depends}
+    )
+  ament_package ()
+endif ()

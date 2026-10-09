@@ -9,7 +9,10 @@
 #
 # --- end cisst license ---
 
-cmake_minimum_required (VERSION 3.10)
+cmake_minimum_required (VERSION 3.16)
+if (POLICY CMP0144)
+  cmake_policy (SET CMP0144 NEW)
+endif ()
 project (sawPSMoveExamples VERSION 2.1.0)
 
 # create a list of required cisst libraries
@@ -25,20 +28,15 @@ set (REQUIRED_CISST_LIBRARIES
   cisstParameterTypesQt)
 
 # find cisst and make sure the required libraries have been compiled
-find_package (cisst 1.2.0 REQUIRED ${REQUIRED_CISST_LIBRARIES})
+find_package (cisst 1.5 REQUIRED COMPONENTS ${REQUIRED_CISST_LIBRARIES})
 
-if (cisst_FOUND_AS_REQUIRED)
-
-  # load cisst configuration
-  include (${CISST_USE_FILE})
-
-  # catkin/ROS paths
-  cisst_set_output_path ()
+# catkin/ROS paths
+cisst_set_output_path ()
 
   # sawPSMove has been compiled within cisst, we should find it automatically
-  find_package (sawPSMove 0.1.0)
+find_package (sawPSMove 0.1.0 REQUIRED)
 
-  if (sawPSMove_FOUND AND CISST_HAS_QT)
+if (CISST_HAS_QT)
 
     # sawPSMove configuration
     include_directories (${sawPSMove_INCLUDE_DIR})
@@ -57,15 +55,13 @@ if (cisst_FOUND_AS_REQUIRED)
                            )
 
     # link against cisst libraries (and dependencies)
-    cisst_target_link_libraries (sawPSMoveQtExample ${REQUIRED_CISST_LIBRARIES})
+    target_link_libraries (sawPSMoveQtExample ${cisst_LIBRARIES})
 
     install (TARGETS sawPSMoveQtExample COMPONENT sawPSMove-Examples
              RUNTIME DESTINATION bin
              LIBRARY DESTINATION lib
              ARCHIVE DESTINATION lib)
 
-  else (sawPSMove_FOUND AND CISST_HAS_QT)
-    message ("Information: code in ${CMAKE_CURRENT_SOURCE_DIR} will not be compiled, it requires sawPSMove and cisstQt")
-  endif (sawPSMove_FOUND AND CISST_HAS_QT)
-
-endif (cisst_FOUND_AS_REQUIRED)
+else ()
+  message ("Information: code in ${CMAKE_CURRENT_SOURCE_DIR} will not be compiled, it requires cisst Qt libraries")
+endif ()

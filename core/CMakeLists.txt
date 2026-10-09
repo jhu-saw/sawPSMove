@@ -9,11 +9,13 @@
 #
 # --- end cisst license ---
 
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required (VERSION 3.16)
+if (POLICY CMP0144)
+  cmake_policy (SET CMP0144 NEW)
+endif ()
 project (sawPSMoveCore VERSION 0.1.0)
 
-find_package (cisst REQUIRED)
-include (${CISST_USE_FILE})
+find_package (cisst 1.5 REQUIRED)
 cisst_cpack_settings (
   VENDOR "JHU"
   MAINTAINER "anton.deguet@jhu.edu")

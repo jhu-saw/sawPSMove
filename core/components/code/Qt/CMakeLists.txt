@@ -17,35 +17,27 @@ set (REQUIRED_CISST_LIBRARIES
      cisstMultiTask
      cisstMultiTaskQt
      cisstParameterTypes
-     cisstParameterTypesQt
-     cisstQt)
+     cisstParameterTypesQt)
 
 # cisst
-find_package (cisst REQUIRED ${REQUIRED_CISST_LIBRARIES})
+find_package (cisst 1.5 REQUIRED COMPONENTS ${REQUIRED_CISST_LIBRARIES})
 
-if (cisst_FOUND_AS_REQUIRED)
+# for Qt generated header files
+include_directories (${CMAKE_CURRENT_BINARY_DIR})
+set (CMAKE_AUTOMOC ON)
 
-  # cisst
-  include (${CISST_USE_FILE})
+add_library (sawPSMoveQt
+             ${sawPSMove_HEADER_DIR}/mtsPSMoveQtWidget.h
+             mtsPSMoveQtWidget.cpp
+             ${SAW_FORCE_DIMENSION_SDK_QT_WRAP_CPP})
+set_target_properties (sawPSMoveQt PROPERTIES
+                       VERSION ${sawPSMove_VERSION}
+                       FOLDER "sawPSMove")
+target_link_libraries (sawPSMoveQt
+                       PUBLIC sawPSMove
+                              ${cisst_LIBRARIES})
 
-  # for Qt generated header files
-  include_directories (${CMAKE_CURRENT_BINARY_DIR})
-  set (CMAKE_AUTOMOC ON)
-
-  add_library (sawPSMoveQt
-               ${sawPSMove_HEADER_DIR}/mtsPSMoveQtWidget.h
-               mtsPSMoveQtWidget.cpp
-               ${SAW_FORCE_DIMENSION_SDK_QT_WRAP_CPP})
-  set_target_properties (sawPSMoveQt PROPERTIES
-                         VERSION ${sawPSMove_VERSION}
-                         FOLDER "sawPSMove")
-  cisst_target_link_libraries (sawPSMoveQt ${REQUIRED_CISST_LIBRARIES})
-
-  install (TARGETS sawPSMoveQt COMPONENT sawPSMove-Qt
-           RUNTIME DESTINATION bin
-           LIBRARY DESTINATION lib
-           ARCHIVE DESTINATION lib)
-
-else (cisst_FOUND_AS_REQUIRED)
-  message ("Information: code will not be compiled, it requires ${REQUIRED_CISST_LIBRARIES}")
-endif (cisst_FOUND_AS_REQUIRED)
+install (TARGETS sawPSMoveQt COMPONENT sawPSMove-Qt
+         RUNTIME DESTINATION bin
+         LIBRARY DESTINATION lib
+         ARCHIVE DESTINATION lib)
